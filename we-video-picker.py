@@ -21,6 +21,61 @@ CONFIG_GROUP_PREFIX = "Wallpaper-luisbocanegra-smart-video-wallpaper-reborn"
 KEY_NAME = "VideoUrls"
 # ===========================================
 
+def is_kde_plugin_installed(plugin_id: str) -> bool:
+    """
+    Check if a KDE Plasma plugin/wallpaper is installed.
+    
+    Checks common installation locations:
+    - ~/.local/share/plasma/wallpapers/
+    - ~/.local/share/kpackage/wallpapers/
+    - /usr/share/plasma/wallpapers/
+    - /usr/share/kpackage/wallpapers/
+    - /usr/local/share/plasma/wallpapers/
+    - /usr/local/share/kpackage/wallpapers/
+    
+    Args:
+        plugin_id: The plugin ID (e.g., "luisbocanegra.smart.video.wallpaper.reborn")
+    
+    Returns:
+        True if the plugin is found, False otherwise
+    """
+    # Try exact match with dots converted to dashes
+    plugin_dir_name = plugin_id.replace(".", "-")
+    
+    base_locations = [
+        Path.home() / ".local/share/plasma/wallpapers",
+        Path.home() / ".local/share/kpackage/wallpapers",
+        Path("/usr/share/plasma/wallpapers"),
+        Path("/usr/share/kpackage/wallpapers"),
+        Path("/usr/local/share/plasma/wallpapers"),
+        Path("/usr/local/share/kpackage/wallpapers"),
+    ]
+    
+    for base_dir in base_locations:
+        # Check for exact directory name match
+        exact_path = base_dir / plugin_dir_name
+        if exact_path.exists() and exact_path.is_dir():
+            return True
+        
+        # Also check if directory exists with the plugin_id as-is (with dots)
+        alt_path = base_dir / plugin_id
+        if alt_path.exists() and alt_path.is_dir():
+            return True
+        
+        # Check if the base directory exists and search for any matching subdirectory
+        if base_dir.exists() and base_dir.is_dir():
+            try:
+                for item in base_dir.iterdir():
+                    if item.is_dir():
+                        # Check if any subdirectory name contains the plugin identifier
+                        item_name = item.name.lower()
+                        if "luisbocanegra" in item_name and "smart" in item_name and "video" in item_name and "wallpaper" in item_name:
+                            return True
+            except Exception:
+                continue
+    
+    return False
+
 class AnimatedGifImage(Gtk.Picture):
     """Custom widget that animates GIF files using GdkPixbuf animation iterator"""
     
@@ -33,19 +88,48 @@ class AnimatedGifImage(Gtk.Picture):
             self.animation = GdkPixbuf.PixbufAnimation.new_from_file(gif_path)
             self.iter = self.animation.get_iter(None)
             
-            # Set initial frame
+            # Set initial (static) first frame
             pixbuf = self.iter.get_pixbuf()
             if pixbuf:
                 scaled = pixbuf.scale_simple(width, height, GdkPixbuf.InterpType.BILINEAR)
                 self.set_pixbuf(scaled)
             
-            # Start animation timer
+            # Store animation parameters but don't start yet
             self.width = width
             self.height = height
-            self.timeout_id = GLib.timeout_add(50, self._update_frame)
+            self.timeout_id = None
+            self.is_animating = False
+            
+            # Connect hover events
+            motion_controller = Gtk.EventControllerMotion.new()
+            motion_controller.connect("enter", self._on_hover_enter)
+            motion_controller.connect("leave", self._on_hover_leave)
+            self.add_controller(motion_controller)
             
         except Exception as e:
             print(f"Error loading GIF animation: {e}")
+    
+    def _on_hover_enter(self, controller, x, y):
+        """Start animation when mouse enters"""
+        if not self.is_animating:
+            self.is_animating = True
+            self.timeout_id = GLib.timeout_add(50, self._update_frame)
+    
+    def _on_hover_leave(self, controller):
+        """Stop animation when mouse leaves"""
+        self.is_animating = False
+        if self.timeout_id:
+            GLib.source_remove(self.timeout_id)
+            self.timeout_id = None
+        # Reset to first frame
+        try:
+            self.iter = self.animation.get_iter(None)
+            pixbuf = self.iter.get_pixbuf()
+            if pixbuf:
+                scaled = pixbuf.scale_simple(self.width, self.height, GdkPixbuf.InterpType.BILINEAR)
+                self.set_pixbuf(scaled)
+        except Exception:
+            pass
     
     def _update_frame(self):
         try:
@@ -57,12 +141,13 @@ class AnimatedGifImage(Gtk.Picture):
                 scaled = pixbuf.scale_simple(self.width, self.height, GdkPixbuf.InterpType.BILINEAR)
                 self.set_pixbuf(scaled)
             
-            return True  # Continue animation
+            return self.is_animating  # Continue animation only if still hovering
         except Exception:
             return False  # Stop animation on error
     
     def cleanup(self):
         """Stop animation timer"""
+        self.is_animating = False
         if hasattr(self, 'timeout_id') and self.timeout_id:
             GLib.source_remove(self.timeout_id)
             self.timeout_id = None
@@ -823,41 +908,89 @@ class WallpaperPicker(Gtk.Application):
 
         success = False
         try:
-            possible_containments = ["1", "2", "11", "12", "21", "22"]
-
             plugin_id = "luisbocanegra.smart.video.wallpaper.reborn"
-
-            for cont_id in possible_containments:
-                group = f"Containments,{cont_id},Wallpaper,{plugin_id},General"
-
-                result = subprocess.run(
-                    [
-                        "kwriteconfig6",
-                        "--file", "plasma-org.kde.plasma.desktop-appletsrc",
-                        "--group", group,
-                        "--key", "VideoUrls",
-                        uri
-                    ],
-                    capture_output=True,
-                    text=True
+            
+            # Check if the plugin is installed before attempting config changes
+            if not is_kde_plugin_installed(plugin_id):
+                self.lbl_status.set_text(
+                    f"Error: The '{plugin_id}' plugin is not installed.\n"
+                    "Please install it before setting the wallpaper.\n"
+                    "Path still copied to clipboard."
                 )
-
-                if result.returncode == 0:
+                return
+            
+            # Update config file and wallpaper plugin directly
+            config_path = Path.home() / ".config/plasma-org.kde.plasma.desktop-appletsrc"
+            if config_path.exists():
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        config_content = f.read()
+                    
+                    lines = config_content.split("\n")
+                    updated_lines = []
+                    in_containment = False
+                    
+                    for line in lines:
+                        # Check if we're entering a [Containments][X] section
+                        if line.startswith("[Containments]["):
+                            in_containment = True
+                            updated_lines.append(line)
+                        # Check if we're leaving the containment section
+                        elif line.startswith("[") and not line.startswith("[Containments]["):
+                            in_containment = False
+                            updated_lines.append(line)
+                        # Update wallpaperplugin lines within containment sections
+                        elif in_containment and line.startswith("wallpaperplugin="):
+                            updated_lines.append(f"wallpaperplugin={plugin_id}")
+                        else:
+                            updated_lines.append(line)
+                    
+                    updated_content = "\n".join(updated_lines)
+                    
+                    with open(config_path, "w", encoding="utf-8") as f:
+                        f.write(updated_content)
+                    
                     success = True
-                    subprocess.run(
-                        ["kwriteconfig6", "--file", "plasma-org.kde.plasma.desktop-appletsrc",
-                         "--group", group, "--key", "RandomOrder", "false"],
-                        capture_output=True
-                    )
-                    subprocess.run(
-                        ["kwriteconfig6", "--file", "plasma-org.kde.plasma.desktop-appletsrc",
-                         "--group", group, "--key", "PlaybackMode", "Single"],
-                        capture_output=True
-                    )
-                    break
+                    print(f"DEBUG: Updated wallpaperplugin to '{plugin_id}' in config file")
+                except Exception as e:
+                    print(f"DEBUG: Error updating config file: {e}")
+            
+            # Still set VideoUrls using kwriteconfig6 for each containment
+            if success:
+                possible_containments = ["1", "2", "11", "12", "21", "22"]
 
+                for cont_id in possible_containments:
+                    group = f"Containments/{cont_id}/Wallpaper/{plugin_id}/General"
+
+                    result = subprocess.run(
+                        [
+                            "kwriteconfig6",
+                            "--file", "plasma-org.kde.plasma.desktop-appletsrc",
+                            "--group", group,
+                            "--key", "VideoUrls",
+                            uri
+                        ],
+                        capture_output=True,
+                        text=True
+                    )
+
+                    if result.returncode == 0:
+                        print(f"DEBUG: Set VideoUrls for group '{group}': returncode={result.returncode}")
+                        
+                        subprocess.run(
+                            ["kwriteconfig6", "--file", "plasma-org.kde.plasma.desktop-appletsrc",
+                             "--group", group, "--key", "RandomOrder", "false"],
+                            capture_output=True
+                        )
+                        subprocess.run(
+                            ["kwriteconfig6", "--file", "plasma-org.kde.plasma.desktop-appletsrc",
+                             "--group", group, "--key", "PlaybackMode", "Single"],
+                            capture_output=True
+                        )
+                        break
+            
             if not success:
-                raise RuntimeError("None of the common containment IDs worked")
+                raise RuntimeError("Failed to update config file")
 
         except Exception as e:
             self.lbl_status.set_text(f"Config update failed: {e}\nPath still copied to clipboard.")
