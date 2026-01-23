@@ -78,6 +78,90 @@ def is_kde_plugin_installed(plugin_id: str) -> bool:
     
     return False
 
+def get_current_video_wallpaper_data():
+    """
+    Read the plasma config file to extract the current video wallpaper data.
+    
+    Checks ~/.config/plasma-org.kde.plasma.desktop-appletsrc for VideoUrls,
+    extracts the file path, and finds the project title and preview files
+    in the parent directory.
+    
+    Returns:
+        dict: Contains 'title', 'preview', 'preview_gif', 'video' keys if found,
+              or empty dict if not found or on error.
+    """
+    try:
+        config_path = Path.home() / ".config/plasma-org.kde.plasma.desktop-appletsrc"
+        if not config_path.exists():
+            return {}
+        
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_content = f.read()
+        
+        # Parse the config file to find VideoUrls entries
+        current_group = None
+        for line in config_content.split("\n"):
+            line = line.strip()
+            
+            # Track current group
+            if line.startswith("["):
+                current_group = line
+            
+            # Look for VideoUrls in wallpaper plugin sections
+            if "VideoUrls=" in line and current_group and "luisbocanegra" in current_group.lower():
+                # Extract the video URL
+                video_url = line.split("VideoUrls=", 1)[1].strip()
+                
+                # Convert file:// URL to path
+                if video_url.startswith("file://"):
+                    video_path = unquote(video_url[7:])  # Remove 'file://' and decode URL encoding
+                    video_path = Path(video_path)
+                    
+                    if video_path.is_file():
+                        # Get parent directory (project folder)
+                        project_dir = video_path.parent
+                        
+                        # Look for project.json to get title
+                        title = None
+                        project_json = project_dir / "project.json"
+                        if project_json.exists():
+                            try:
+                                with open(project_json, "r", encoding="utf-8") as pf:
+                                    proj_data = json.load(pf)
+                                    title = proj_data.get("title", "Untitled")
+                            except Exception:
+                                title = project_dir.name
+                        else:
+                            title = project_dir.name
+                        
+                        # Look for preview files
+                        preview_static = None
+                        preview_gif = None
+                        
+                        for name in ("preview.jpg", "preview.png"):
+                            preview_path = project_dir / name
+                            if preview_path.exists():
+                                preview_static = str(preview_path)
+                                break
+                        
+                        for name in ("preview.gif", "preview.webp"):
+                            preview_path = project_dir / name
+                            if preview_path.exists():
+                                preview_gif = str(preview_path)
+                                break
+                        
+                        return {
+                            "title": title,
+                            "preview": preview_static,
+                            "preview_gif": preview_gif,
+                            "video": str(video_path)
+                        }
+        
+        return {}
+    except Exception as e:
+        print(f"Error reading current video wallpaper data: {e}")
+        return {}
+
 class AnimatedGifImage(Gtk.Picture):
     """Custom widget that animates GIF files using GdkPixbuf animation iterator
 
@@ -642,7 +726,7 @@ class WallpaperPicker(Gtk.Application):
 
                 para_text = (
                     "The results you see are everything you should be able to download and use for now.\n"
-                    "This is just a workaround for the time being as a better solution is not yet available for the time being."
+                    "This is just a workaround for the time being as a better solution is not yet available."
                 )
 
                 # Title for the browse tab
@@ -841,6 +925,93 @@ class WallpaperPicker(Gtk.Application):
             pass
 
         self.clipboard = win.get_display().get_clipboard()
+
+        # Display current video wallpaper preview and title on startup
+        def _display_current_wallpaper():
+            try:
+                current_data = get_current_video_wallpaper_data()
+                if current_data and current_data.get("title"):
+                    try:
+                        if hasattr(self, "lbl_selected_title"):
+                            esc_title = GLib.markup_escape_text(current_data.get("title", ""))
+                            self.lbl_selected_title.set_markup(f"<span weight='bold' size='17000'>{esc_title}</span>")
+                    except Exception:
+                        if hasattr(self, "lbl_selected_title"):
+                            self.lbl_selected_title.set_text(current_data.get("title", ""))
+                    
+                    try:
+                        if hasattr(self, "selected_thumb_box"):
+                            # Clear placeholder
+                            while child := self.selected_thumb_box.get_first_child():
+                                self.selected_thumb_box.remove(child)
+                            
+                            # Load preview
+                            thumb = self.make_preview_widget(
+                                current_data.get("preview"),
+                                current_data.get("preview_gif"),
+                                180, 180,
+                                autoplay=True
+                            )
+                            self.selected_thumb_box.append(thumb)
+                            if isinstance(thumb, AnimatedGifImage):
+                                try:
+                                    thumb.start_animation()
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    
+                    # Populate metadata for the current wallpaper
+                    try:
+                        vid = current_data.get("video")
+                        if vid:
+                            meta = self.get_video_metadata(vid)
+                            # Resolution
+                            try:
+                                if meta.get("width") and meta.get("height"):
+                                    self.lbl_meta_res.set_text(f"Resolution: {meta['width']}×{meta['height']}")
+                                else:
+                                    self.lbl_meta_res.set_text("Resolution: —")
+                            except Exception:
+                                pass
+                            # Duration
+                            try:
+                                if meta.get("duration"):
+                                    self.lbl_meta_dur.set_text(f"Duration: {self._format_duration(meta['duration'])}")
+                                else:
+                                    self.lbl_meta_dur.set_text("Duration: —")
+                            except Exception:
+                                pass
+                            # Size
+                            try:
+                                if meta.get("size") is not None:
+                                    self.lbl_meta_size.set_text(f"Size: {self._human_size(meta['size'])}")
+                                else:
+                                    self.lbl_meta_size.set_text("Size: —")
+                            except Exception:
+                                pass
+                            # Created
+                            try:
+                                if meta.get("created"):
+                                    self.lbl_meta_created.set_text(f"Created: {meta['created'].strftime('%Y-%m-%d %H:%M')}")
+                                else:
+                                    self.lbl_meta_created.set_text("Created: —")
+                            except Exception:
+                                pass
+                            # Show metadata box
+                            try:
+                                if hasattr(self, "meta_box"):
+                                    self.meta_box.set_visible(True)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return False
+
+        # Use timeout_add with a delay to ensure current wallpaper display runs AFTER auto-import completes
+        GLib.timeout_add(500, _display_current_wallpaper)
 
         win.present()
 
@@ -1051,6 +1222,19 @@ class WallpaperPicker(Gtk.Application):
 
             GLib.idle_add(self.show_items, items)
             GLib.idle_add(self.lbl_status.set_text, f"Found {len(items)} compatible wallpapers.")
+            
+            # Clear the "Found X" status message after 3 seconds and show "Open in Explorer"
+            def _clear_found_message():
+                try:
+                    if hasattr(self, "lbl_status"):
+                        folder_uri = "file://" + quote(base_path)
+                        self.lbl_status.set_markup(f"<a href='{folder_uri}'>Open in Explorer</a>")
+                except Exception:
+                    pass
+                return False
+            
+            GLib.timeout_add(3000, _clear_found_message)
+            
             try:
                 # If we have a saved last_path, and the scanned base_path matches it,
                 # show the first found item's preview and title in the top-left area.
@@ -1067,42 +1251,47 @@ class WallpaperPicker(Gtk.Application):
                             # fallback: if resolution fails, just require lastp to be truthy
                             match_paths = True
 
+                    # Only show first item preview if no current wallpaper is configured
                     if match_paths:
-                        first = items[0]
+                        current_wallpaper = get_current_video_wallpaper_data()
+                        if not current_wallpaper or not current_wallpaper.get("video"):
+                            first = items[0]
 
-                        def _update_selected():
-                            try:
-                                if hasattr(self, "selected_thumb_box"):
-                                    try:
-                                        while child := self.selected_thumb_box.get_first_child():
-                                            self.selected_thumb_box.remove(child)
-                                    except Exception:
-                                        pass
-
-                                    try:
-                                        thumb = self.make_preview_widget(first.get("preview"), first.get("preview_gif"), 180, 180, autoplay=True)
-                                        self.selected_thumb_box.append(thumb)
-                                        if isinstance(thumb, AnimatedGifImage):
-                                            try:
-                                                thumb.start_animation()
-                                            except Exception:
-                                                pass
-                                    except Exception:
-                                        pass
-
+                            def _update_selected():
                                 try:
-                                    esc_title = GLib.markup_escape_text(first.get("title", "Selected"))
-                                    self.lbl_selected_title.set_markup(f"<span weight='bold' size='17000'>{esc_title}</span>")
+                                    if hasattr(self, "selected_thumb_box"):
+                                        try:
+                                            while child := self.selected_thumb_box.get_first_child():
+                                                self.selected_thumb_box.remove(child)
+                                        except Exception:
+                                            pass
+
+                                        try:
+                                            thumb = self.make_preview_widget(first.get("preview"), first.get("preview_gif"), 180, 180, autoplay=True)
+                                            self.selected_thumb_box.append(thumb)
+                                            if isinstance(thumb, AnimatedGifImage):
+                                                try:
+                                                    thumb.start_animation()
+                                                except Exception:
+                                                    pass
+                                        except Exception:
+                                            pass
+
+                                    try:
+                                        esc_title = GLib.markup_escape_text(first.get("title", "Selected"))
+                                        self.lbl_selected_title.set_markup(f"<span weight='bold' size='17000'>{esc_title}</span>")
+                                    except Exception:
+                                        pass
                                 except Exception:
                                     try:
                                         self.lbl_selected_title.set_text(first.get("title", "Selected"))
                                     except Exception:
                                         pass
-                            except Exception:
-                                pass
+                                except Exception:
+                                    pass
                             return False
 
-                        GLib.idle_add(_update_selected)
+                            GLib.idle_add(_update_selected)
                 except Exception:
                     pass
             except Exception:

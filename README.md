@@ -3,3 +3,4 @@
 
 TODO:
 - In help panel, add a "report issue" link so users can give feedback
+- Fix bug where on startup, if you click "open in explorer", it takes you one folder above the target folder.
