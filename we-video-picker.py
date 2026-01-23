@@ -1101,14 +1101,10 @@ class WallpaperPicker(Gtk.Application):
         except Exception:
             pass
         try:
-            # hide metadata until a new selection is made
+            # Keep metadata box visible so it can be populated immediately
             if hasattr(self, "meta_box"):
                 try:
-                    self.meta_box.set_visible(False)
-                    self.lbl_meta_res.set_text("Resolution: ")
-                    self.lbl_meta_dur.set_text("Duration: ")
-                    self.lbl_meta_size.set_text("Size: ")
-                    self.lbl_meta_created.set_text("Created: ")
+                    self.meta_box.set_visible(True)
                 except Exception:
                     pass
         except Exception:
@@ -1142,6 +1138,79 @@ class WallpaperPicker(Gtk.Application):
         button.set_sensitive(False)
 
         threading.Thread(target=self.scan_wallpapers, args=(path, button), daemon=True).start()
+        # Immediately probe for a first valid item (fast) and show its metadata so the UI updates right away
+        try:
+            try:
+                for item_id in os.listdir(path):
+                    item_dir = os.path.join(path, item_id)
+                    if not os.path.isdir(item_dir):
+                        continue
+
+                    json_path = os.path.join(item_dir, "project.json")
+                    if not os.path.isfile(json_path):
+                        continue
+
+                    try:
+                        with open(json_path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                    except Exception:
+                        continue
+
+                    # determine video file quickly
+                    file_rel = data.get("file") or data.get("preview") or data.get("video")
+                    video_path = None
+                    if file_rel:
+                        candidate = os.path.join(item_dir, file_rel)
+                        if os.path.isfile(candidate) and candidate.lower().endswith((".mp4", ".webm", ".mkv")):
+                            video_path = candidate
+
+                    if not video_path:
+                        for cand in ("background.mp4", "background.webm", "project.mp4"):
+                            vp = os.path.join(item_dir, cand)
+                            if os.path.isfile(vp):
+                                video_path = vp
+                                break
+                    if not video_path:
+                        for fname in os.listdir(item_dir):
+                            if fname.lower().endswith((".mp4", ".webm", ".mkv")):
+                                video_path = os.path.join(item_dir, fname)
+                                break
+
+                    if not video_path:
+                        continue
+
+                    title = data.get("title", item_id)
+                    preview_static = None
+                    for name in ("preview.jpg", "preview.png"):
+                        pth = os.path.join(item_dir, name)
+                        if os.path.isfile(pth):
+                            preview_static = pth
+                            break
+                    preview_gif = None
+                    gif_path = os.path.join(item_dir, "preview.gif")
+                    if os.path.isfile(gif_path):
+                        preview_gif = gif_path
+
+                    try:
+                        size = os.path.getsize(video_path)
+                    except Exception:
+                        size = 0
+
+                    first_item = {
+                        "title": title,
+                        "video": video_path,
+                        "preview": preview_static,
+                        "preview_gif": preview_gif,
+                        "id": item_id,
+                        "dir": item_dir,
+                        "size": size,
+                    }
+                    GLib.idle_add(self.show_first_item_metadata_item, first_item)
+                    break
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def scan_wallpapers(self, base_path, button):
         GLib.idle_add(self.clear_grid)
