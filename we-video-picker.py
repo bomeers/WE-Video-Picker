@@ -378,6 +378,35 @@ class WallpaperPicker(Gtk.Application):
                 pass
         hbox_entry.append(self.entry_path)
 
+        # If no last path saved in state, show a quick blue "Import" button
+        try:
+            if not last:
+                btn_quick_import = Gtk.Button(label="Test File Path")
+                try:
+                    btn_quick_import.add_css_class("suggested-action")
+                except Exception:
+                    try:
+                        btn_quick_import.get_style_context().add_class("suggested-action")
+                    except Exception:
+                        pass
+                try:
+                    btn_quick_import.set_margin_start(8)
+                    btn_quick_import.set_margin_end(8)
+                except Exception:
+                    pass
+                try:
+                    btn_quick_import.connect("clicked", self.on_import_clicked)
+                except Exception:
+                    pass
+                try:
+                    # keep a reference so we can hide it after import
+                    self.btn_quick_import = btn_quick_import
+                except Exception:
+                    pass
+                hbox_entry.append(btn_quick_import)
+        except Exception:
+            pass
+
         btn_import = Gtk.Button(label="Import Wallpapers")
         btn_import.add_css_class("suggested-action")
         try:
@@ -600,7 +629,109 @@ class WallpaperPicker(Gtk.Application):
         workshop_scrolled = Gtk.ScrolledWindow()
         workshop_scrolled.set_vexpand(True)
         try:
-            workshop_scrolled.set_child(self.workshop_grid)
+            # Create a vertical container for the browse tab content
+            browse_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            try:
+                list_text = (
+                    "1. Open Wallpaper Engine\n"
+                    "2. Open the Workshop Tab\n"
+                    "3. Open the \"Filter Results\" left menu\n"
+                    "4. Under Type: Only Check the \"Video\" box\n"
+                    "5. Uncheck everything else as it will not be compatible\n"
+                )
+
+                para_text = (
+                    "The results you see are everything you should be able to download and use for now.\n"
+                    "This is just a workaround for the time being as a better solution is not yet available for the time being."
+                )
+
+                # Title for the browse tab
+                try:
+                    title_lbl = Gtk.Label()
+                    try:
+                        title_lbl.set_markup("<span weight='bold' size='17000'>How to Browse Wallpapers:</span>")
+                    except Exception:
+                        title_lbl.set_text("How to Browse Wallpapers:")
+                    try:
+                        title_lbl.add_css_class("section-title")
+                    except Exception:
+                        try:
+                            title_lbl.get_style_context().add_class("section-title")
+                        except Exception:
+                            pass
+                    try:
+                        title_lbl.set_halign(Gtk.Align.CENTER)
+                    except Exception:
+                        pass
+                    try:
+                        title_lbl.set_margin_top(12)
+                        title_lbl.set_margin_bottom(2)
+                    except Exception:
+                        pass
+                    browse_box.append(title_lbl)
+                except Exception:
+                    pass
+
+                # Numbered list: left-justified within a constrained width, but centered as a block
+                list_lbl = Gtk.Label(label=list_text)
+                try:
+                    list_lbl.set_wrap(True)
+                    list_lbl.set_justify(Gtk.Justification.LEFT)
+                except Exception:
+                    pass
+                try:
+                    list_lbl.set_size_request(300, -1)
+                except Exception:
+                    pass
+                try:
+                    list_lbl.set_halign(Gtk.Align.CENTER)
+                except Exception:
+                    pass
+
+                # Paragraph: centered and wrapped
+                para_lbl = Gtk.Label(label=para_text)
+                try:
+                    para_lbl.set_wrap(True)
+                    para_lbl.set_justify(Gtk.Justification.CENTER)
+                except Exception:
+                    pass
+                try:
+                    para_lbl.set_size_request(300, -1)
+                except Exception:
+                    pass
+                try:
+                    para_lbl.set_halign(Gtk.Align.CENTER)
+                except Exception:
+                    pass
+                # add extra top padding so the numbered list sits further down
+                try:
+                    list_lbl.set_margin_top(50)
+                    list_lbl.set_margin_bottom(6)
+                except Exception:
+                    pass
+                browse_box.append(list_lbl)
+
+                try:
+                    para_lbl.set_margin_top(6)
+                    para_lbl.set_margin_bottom(6)
+                except Exception:
+                    pass
+                browse_box.append(para_lbl)
+            except Exception:
+                pass
+
+            try:
+                open_btn = Gtk.Button(label="Open Wallpaper Engine")
+                open_btn.set_tooltip_text("Launch Wallpaper Engine via Steam")
+                open_btn.add_css_class("open-we-button")
+                open_btn.connect("clicked", self.on_open_wallpaper_engine)
+                browse_box.append(open_btn)
+            except Exception:
+                pass
+
+            # then append the workshop grid below
+            browse_box.append(self.workshop_grid)
+            workshop_scrolled.set_child(browse_box)
         except Exception:
             wb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             wb.append(self.workshop_grid)
@@ -611,10 +742,20 @@ class WallpaperPicker(Gtk.Application):
         try:
             self.sections_stack.add_titled(compat_scrolled, "compatible", "Compatible Wallpapers")
             self.sections_stack.add_titled(incompat_scrolled, "incompatible", "Incompatible Wallpapers (scene projects)")
+            # Add a third tab for browsing wallpapers (workshop / online)
+            try:
+                self.sections_stack.add_titled(workshop_scrolled, "browse", "Browse Wallpapers")
+            except Exception:
+                # ignore if workshop tab cannot be added for some reason
+                pass
         except Exception:
             # fallback if add_titled not available
             self.sections_stack.add_child(compat_scrolled)
             self.sections_stack.add_child(incompat_scrolled)
+            try:
+                self.sections_stack.add_child(workshop_scrolled)
+            except Exception:
+                pass
 
         stack_switcher = Gtk.StackSwitcher()
         try:
@@ -688,6 +829,10 @@ class WallpaperPicker(Gtk.Application):
             viewport {
                 background-color: #2c2c2c;
             }
+            .open-we-button {
+                margin-left: 400px;
+                margin-right: 400px;
+            }
             """
             provider = Gtk.CssProvider()
             provider.load_from_data(css)
@@ -701,6 +846,12 @@ class WallpaperPicker(Gtk.Application):
 
     def on_import_clicked(self, button):
         raw = self.entry_path.get_text().strip()
+        # initialize/import failure counter if not present
+        try:
+            if not hasattr(self, "_import_fail_count"):
+                self._import_fail_count = 0
+        except Exception:
+            pass
         if not raw:
             self.lbl_status.set_text("Please provide a path to Wallpaper Engine or the workshop content folder")
             return
@@ -745,10 +896,30 @@ class WallpaperPicker(Gtk.Application):
                 pass
 
         if not workshop_dir or not workshop_dir.exists():
-            self.lbl_status.set_text("Could not locate workshop content folder from provided path")
+            try:
+                self._import_fail_count = getattr(self, "_import_fail_count", 0) + 1
+            except Exception:
+                self._import_fail_count = 1
+            base_msg = "Could not locate workshop content folder from provided path"
+            try:
+                if self._import_fail_count > 1:
+                    display = f"{base_msg} (x{self._import_fail_count})"
+                else:
+                    display = base_msg
+            except Exception:
+                display = base_msg
+            try:
+                self.lbl_status.set_text(display)
+            except Exception:
+                pass
             return
 
         path = str(workshop_dir)
+        try:
+            # reset failure counter on successful detection
+            self._import_fail_count = 0
+        except Exception:
+            pass
         try:
             self.save_state({"last_path": path})
         except Exception:
@@ -781,6 +952,15 @@ class WallpaperPicker(Gtk.Application):
                 if hasattr(self, "chk_startup"):
                     try:
                         self.chk_startup.set_visible(False)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                if hasattr(self, "btn_quick_import"):
+                    try:
+                        # hide the quick import button along with the address bar and checkbox
+                        self.btn_quick_import.set_visible(False)
                     except Exception:
                         pass
             except Exception:
@@ -871,6 +1051,62 @@ class WallpaperPicker(Gtk.Application):
 
             GLib.idle_add(self.show_items, items)
             GLib.idle_add(self.lbl_status.set_text, f"Found {len(items)} compatible wallpapers.")
+            try:
+                # If we have a saved last_path, and the scanned base_path matches it,
+                # show the first found item's preview and title in the top-left area.
+                st = self.load_state()
+                lastp = st.get("last_path") if isinstance(st, dict) else None
+                try:
+                    from pathlib import Path as _Path
+                    match_paths = False
+                    if lastp and items:
+                        try:
+                            if _Path(str(lastp)).resolve() == _Path(base_path).resolve():
+                                match_paths = True
+                        except Exception:
+                            # fallback: if resolution fails, just require lastp to be truthy
+                            match_paths = True
+
+                    if match_paths:
+                        first = items[0]
+
+                        def _update_selected():
+                            try:
+                                if hasattr(self, "selected_thumb_box"):
+                                    try:
+                                        while child := self.selected_thumb_box.get_first_child():
+                                            self.selected_thumb_box.remove(child)
+                                    except Exception:
+                                        pass
+
+                                    try:
+                                        thumb = self.make_preview_widget(first.get("preview"), first.get("preview_gif"), 180, 180, autoplay=True)
+                                        self.selected_thumb_box.append(thumb)
+                                        if isinstance(thumb, AnimatedGifImage):
+                                            try:
+                                                thumb.start_animation()
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+
+                                try:
+                                    esc_title = GLib.markup_escape_text(first.get("title", "Selected"))
+                                    self.lbl_selected_title.set_markup(f"<span weight='bold' size='17000'>{esc_title}</span>")
+                                except Exception:
+                                    try:
+                                        self.lbl_selected_title.set_text(first.get("title", "Selected"))
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            return False
+
+                        GLib.idle_add(_update_selected)
+                except Exception:
+                    pass
+            except Exception:
+                pass
         except Exception as e:
             GLib.idle_add(self.lbl_status.set_text, f"Error: {str(e)}")
         finally:
@@ -1571,6 +1807,28 @@ class WallpaperPicker(Gtk.Application):
                 threading.Thread(target=self.scan_incompatible, args=(base,), daemon=True).start()
         except Exception:
             pass
+
+    def on_open_wallpaper_engine(self, button):
+        try:
+            # Try to open Wallpaper Engine via Steam URI handler
+            url = "steam://rungameid/431960"
+            try:
+                subprocess.Popen(["xdg-open", url])
+            except Exception:
+                # fallback to opening via `steam -applaunch` if available
+                try:
+                    subprocess.Popen(["steam", "-applaunch", "431960"])
+                except Exception:
+                    raise
+            try:
+                self.lbl_status.set_text("Opening Wallpaper Engine via Steam...")
+            except Exception:
+                pass
+        except Exception:
+            try:
+                self.lbl_status.set_text("Failed to open Wallpaper Engine (no handler found).")
+            except Exception:
+                pass
 
     def on_help_clicked(self, button):
         try:
