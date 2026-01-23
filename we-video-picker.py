@@ -9,6 +9,8 @@ import subprocess
 import threading
 from pathlib import Path
 from urllib.parse import quote, unquote
+from datetime import datetime
+import shutil
 
 # ================= CONFIG =================
 WE_WORKSHOP_DEFAULT = str(Path.home() / ".var/app/com.valvesoftware.Steam/.steam/steam/steamapps/workshop/content/431960")
@@ -77,46 +79,62 @@ def is_kde_plugin_installed(plugin_id: str) -> bool:
     return False
 
 class AnimatedGifImage(Gtk.Picture):
-    """Custom widget that animates GIF files using GdkPixbuf animation iterator"""
-    
-    def __init__(self, gif_path, width, height):
+    """Custom widget that animates GIF files using GdkPixbuf animation iterator
+
+    Supports optional autoplay (start immediately) and optional hover control.
+    """
+
+    def __init__(self, gif_path, width, height, autoplay=False, hover=True):
         super().__init__()
         self.set_content_fit(Gtk.ContentFit.COVER)
         self.set_size_request(width, height)
-        
+
         try:
             self.animation = GdkPixbuf.PixbufAnimation.new_from_file(gif_path)
             self.iter = self.animation.get_iter(None)
-            
+
             # Set initial (static) first frame
             pixbuf = self.iter.get_pixbuf()
             if pixbuf:
                 scaled = pixbuf.scale_simple(width, height, GdkPixbuf.InterpType.BILINEAR)
                 self.set_pixbuf(scaled)
-            
-            # Store animation parameters but don't start yet
+
+            # Store animation parameters
             self.width = width
             self.height = height
             self.timeout_id = None
             self.is_animating = False
-            
-            # Connect hover events
-            motion_controller = Gtk.EventControllerMotion.new()
-            motion_controller.connect("enter", self._on_hover_enter)
-            motion_controller.connect("leave", self._on_hover_leave)
-            self.add_controller(motion_controller)
-            
+            self.hover_control = bool(hover)
+
+            # Connect hover events only if hover control is enabled
+            if self.hover_control:
+                motion_controller = Gtk.EventControllerMotion.new()
+                motion_controller.connect("enter", self._on_hover_enter)
+                motion_controller.connect("leave", self._on_hover_leave)
+                self.add_controller(motion_controller)
+
+            # Autoplay if requested
+            if autoplay:
+                try:
+                    self.start_animation()
+                except Exception:
+                    pass
+
         except Exception as e:
             print(f"Error loading GIF animation: {e}")
     
     def _on_hover_enter(self, controller, x, y):
         """Start animation when mouse enters"""
+        if not self.hover_control:
+            return
         if not self.is_animating:
             self.is_animating = True
             self.timeout_id = GLib.timeout_add(50, self._update_frame)
     
     def _on_hover_leave(self, controller):
         """Stop animation when mouse leaves"""
+        if not self.hover_control:
+            return
         self.is_animating = False
         if self.timeout_id:
             GLib.source_remove(self.timeout_id)
@@ -152,6 +170,26 @@ class AnimatedGifImage(Gtk.Picture):
             GLib.source_remove(self.timeout_id)
             self.timeout_id = None
 
+    def start_animation(self):
+        """Start the GIF animation immediately (no hover required)"""
+        try:
+            if not getattr(self, 'is_animating', False):
+                self.is_animating = True
+                if not getattr(self, 'timeout_id', None):
+                    self.timeout_id = GLib.timeout_add(50, self._update_frame)
+        except Exception:
+            pass
+
+    def stop_animation(self):
+        """Stop the GIF animation"""
+        try:
+            self.is_animating = False
+            if getattr(self, 'timeout_id', None):
+                GLib.source_remove(self.timeout_id)
+                self.timeout_id = None
+        except Exception:
+            pass
+
 class WallpaperPicker(Gtk.Application):
     def __init__(self):
         super().__init__(application_id="com.example.WEVideoPicker")
@@ -185,9 +223,17 @@ class WallpaperPicker(Gtk.Application):
 
     def on_activate(self, app):
         win = Gtk.ApplicationWindow(application=app, title="Wallpaper Engine Video Picker")
-        win.set_default_size(1320, 900)
+        win.set_default_size(1200, 900)
         try:
             self.main_window = win
+        except Exception:
+            pass
+        try:
+            # make window use app-bg so its background matches the grid
+            try:
+                win.get_style_context().add_class("app-bg")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -234,11 +280,18 @@ class WallpaperPicker(Gtk.Application):
         self.entry_path.set_placeholder_text("Path to Wallpaper Engine install (..../steamapps/common/wallpaper_engine)")
         # Top-left status area (selected title above status/link)
         try:
+            # Selected title and thumbnail area
             self.lbl_selected_title = Gtk.Label()
             self.lbl_selected_title.set_wrap(True)
             self.lbl_selected_title.set_wrap_mode(Pango.WrapMode.WORD)
             self.lbl_selected_title.set_ellipsize(Pango.EllipsizeMode.END)
             self.lbl_selected_title.set_text("")
+            try:
+                self.lbl_selected_title.set_halign(Gtk.Align.START)
+                self.lbl_selected_title.set_xalign(0.0)
+                self.lbl_selected_title.set_margin_start(0)
+            except Exception:
+                pass
 
             self.lbl_status = Gtk.Label(label="Ready – enter path and click Import")
             self.lbl_status.set_margin_top(8)
@@ -259,17 +312,78 @@ class WallpaperPicker(Gtk.Application):
             except Exception:
                 pass
 
-            status_top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            status_top.append(self.lbl_selected_title)
-            status_top.append(self.lbl_status)
+            # Thumbnail to the left of the title
+            try:
+                self.selected_thumb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                # small padding to the right of the preview image
+                try:
+                    self.selected_thumb_box.set_margin_end(8)
+                except Exception:
+                    pass
+                # placeholder empty image
+                placeholder = Gtk.Picture()
+                placeholder.set_size_request(180, 180)
+                self.selected_thumb_box.append(placeholder)
+            except Exception:
+                self.selected_thumb_box = Gtk.Box()
+
+            title_stack = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            title_stack.append(self.lbl_selected_title)
+            # metadata labels (resolution, duration, size, created) stacked vertically
+            try:
+                self.meta_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+
+                self.lbl_meta_res = Gtk.Label(label="Resolution: ")
+                self.lbl_meta_res.set_xalign(0.0)
+                self.lbl_meta_dur = Gtk.Label(label="Duration: ")
+                self.lbl_meta_dur.set_xalign(0.0)
+                self.lbl_meta_size = Gtk.Label(label="Size: ")
+                self.lbl_meta_size.set_xalign(0.0)
+                self.lbl_meta_created = Gtk.Label(label="Created: ")
+                self.lbl_meta_created.set_xalign(0.0)
+
+                self.meta_box.append(self.lbl_meta_res)
+                self.meta_box.append(self.lbl_meta_dur)
+                self.meta_box.append(self.lbl_meta_size)
+                self.meta_box.append(self.lbl_meta_created)
+                try:
+                    self.meta_box.set_visible(False)
+                except Exception:
+                    pass
+            except Exception:
+                # fallback single label if anything fails
+                self.meta_box = Gtk.Box()
+                self.lbl_meta_res = Gtk.Label()
+                self.lbl_meta_dur = Gtk.Label()
+                self.lbl_meta_size = Gtk.Label()
+                self.lbl_meta_created = Gtk.Label()
+                self.meta_box.append(self.lbl_meta_res)
+
+            title_stack.append(self.meta_box)
+            title_stack.append(self.lbl_status)
+
+            status_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            status_top.append(self.selected_thumb_box)
+            status_top.append(title_stack)
             status_top.set_halign(Gtk.Align.START)
         except Exception:
             pass
 
+        try:
+            self.entry_path.add_css_class("sort-container")
+        except Exception:
+            try:
+                self.entry_path.get_style_context().add_class("sort-container")
+            except Exception:
+                pass
         hbox_entry.append(self.entry_path)
 
         btn_import = Gtk.Button(label="Import Wallpapers")
         btn_import.add_css_class("suggested-action")
+        try:
+            btn_import.set_margin_end(10)
+        except Exception:
+            pass
         btn_import.connect("clicked", self.on_import_clicked)
 
         # Header: title/status on left, controls on the right (Sort, Import, Help)
@@ -277,11 +391,18 @@ class WallpaperPicker(Gtk.Application):
         header.set_valign(Gtk.Align.START)
         header.set_hexpand(True)
 
-        status_top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        status_top.append(self.lbl_selected_title)
-        status_top.append(self.lbl_status)
-        status_top.set_halign(Gtk.Align.START)
-        header.append(status_top)
+        # Append the earlier-created status_top (which includes thumbnail and title)
+        try:
+            header.append(status_top)
+        except Exception:
+            try:
+                st = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+                st.append(self.lbl_selected_title)
+                st.append(self.lbl_status)
+                st.set_halign(Gtk.Align.START)
+                header.append(st)
+            except Exception:
+                pass
 
         # spacer pushes controls to the right of the header
         try:
@@ -291,34 +412,70 @@ class WallpaperPicker(Gtk.Application):
         except Exception:
             pass
 
-        # Controls box aligned with the title
+        # Controls box aligned with the title: vertical so buttons stay on top and sort sits below
         try:
-            controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
             controls.set_valign(Gtk.Align.START)
-            lbl_sort = Gtk.Label(label="Sort:")
-            lbl_sort.set_margin_top(6)
-            controls.append(lbl_sort)
-            self.sort_combo = Gtk.ComboBoxText()
-            for opt in ("A-Z", "Z-A", "Size on Disk", "Subscription Date"):
-                self.sort_combo.append_text(opt)
-            self.sort_combo.set_active(0)
-            self.sort_combo.set_tooltip_text("Sort wallpapers")
-            self.sort_combo.connect("changed", self.on_sort_changed)
-            controls.append(self.sort_combo)
-            controls.append(btn_import)
-
-            # help button
-            help_btn = Gtk.Button()
+            # avoid taking extra vertical space so tabs stay close to the header
             try:
-                img = Gtk.Image.new_from_icon_name("preferences-system-symbolic")
-                img.set_valign(Gtk.Align.CENTER)
-                img.set_halign(Gtk.Align.CENTER)
-                help_btn.set_child(img)
+                controls.set_vexpand(False)
             except Exception:
-                help_btn.set_label("Help")
-            help_btn.set_tooltip_text("Help / Settings")
-            help_btn.connect("clicked", self.on_help_clicked)
-            controls.append(help_btn)
+                pass
+            try:
+                controls.set_hexpand(False)
+            except Exception:
+                pass
+            # mark this controls box so it can be targeted by CSS/layout
+            try:
+                controls.add_css_class("sort-container")
+            except Exception:
+                try:
+                    controls.get_style_context().add_class("sort-container")
+                except Exception:
+                    pass
+
+            # top row: Import + Help buttons
+            try:
+                top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=1)
+                top_row.set_valign(Gtk.Align.CENTER)
+                top_row.append(btn_import)
+
+                help_btn = Gtk.Button()
+                try:
+                    img = Gtk.Image.new_from_icon_name("preferences-system-symbolic")
+                    img.set_valign(Gtk.Align.CENTER)
+                    img.set_halign(Gtk.Align.CENTER)
+                    help_btn.set_child(img)
+                except Exception:
+                    help_btn.set_label("Help")
+                help_btn.set_tooltip_text("Help / Settings")
+                help_btn.connect("clicked", self.on_help_clicked)
+                top_row.append(help_btn)
+
+                controls.append(top_row)
+            except Exception:
+                pass
+
+            # sort controls below the buttons (still inside the same container)
+            try:
+                sort_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                sort_box.set_valign(Gtk.Align.CENTER)
+                try:
+                    sort_box.set_margin_top(110)
+                except Exception:
+                    pass
+                lbl_sort = Gtk.Label(label="Sort:")
+                sort_box.append(lbl_sort)
+                self.sort_combo = Gtk.ComboBoxText()
+                for opt in ("A-Z", "Z-A", "Size on Disk", "Subscription Date"):
+                    self.sort_combo.append_text(opt)
+                self.sort_combo.set_active(0)
+                self.sort_combo.set_tooltip_text("Sort wallpapers")
+                self.sort_combo.connect("changed", self.on_sort_changed)
+                sort_box.append(self.sort_combo)
+                controls.append(sort_box)
+            except Exception:
+                pass
 
             header.append(controls)
         except Exception:
@@ -354,6 +511,7 @@ class WallpaperPicker(Gtk.Application):
 
         # append header first (top) then entry row below it
         vbox.append(header)
+
         vbox.append(hbox_entry)
 
         # Status area (secondary) — keeps small messages
@@ -374,21 +532,7 @@ class WallpaperPicker(Gtk.Application):
         except Exception:
             pass
 
-        # Compatible wallpapers section
-        try:
-            self.compat_expander = Gtk.Expander(label="Compatible Wallpapers")
-            self.compat_expander.set_expanded(True)
-        except Exception:
-            self.compat_expander = Gtk.Expander()
-
-        try:
-            lbl_compat = Gtk.Label()
-            lbl_compat.set_use_markup(True)
-            lbl_compat.set_markup("<span weight='bold' size='12000'>Compatible Wallpapers</span>")
-            self.compat_expander.set_label_widget(lbl_compat)
-        except Exception:
-            pass
-
+        # Compatible wallpapers section (now a Stack tab)
         self.compat_grid = Gtk.Grid()
         self.compat_grid.set_row_spacing(16)
         self.compat_grid.set_column_spacing(16)
@@ -403,32 +547,6 @@ class WallpaperPicker(Gtk.Application):
             self.compat_grid.get_style_context().add_class("grid-bg")
         except Exception:
             pass
-        try:
-            self.compat_expander.set_child(self.compat_grid)
-        except Exception:
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            box.append(self.compat_grid)
-            self.compat_expander.set_child(box)
-
-        # Incompatible wallpapers section
-        try:
-            self.incompat_expander = Gtk.Expander(label="Incompatible Wallpapers (scene projects)")
-            self.incompat_expander.set_expanded(False)
-        except Exception:
-            self.incompat_expander = Gtk.Expander()
-
-        try:
-            lbl_incompat = Gtk.Label()
-            lbl_incompat.set_use_markup(True)
-            lbl_incompat.set_markup("<span weight='bold' size='12000'>Incompatible Wallpapers (scene projects)</span>")
-            self.incompat_expander.set_label_widget(lbl_incompat)
-        except Exception:
-            pass
-        try:
-            self.incompat_expander.connect("notify::expanded", self.on_incompat_expander_toggled)
-        except Exception:
-            pass
-
         self.incompat_grid = Gtk.Grid()
         self.incompat_grid.set_row_spacing(12)
         self.incompat_grid.set_column_spacing(12)
@@ -443,20 +561,96 @@ class WallpaperPicker(Gtk.Application):
             self.incompat_grid.get_style_context().add_class("incompat-grid-bg")
         except Exception:
             pass
+
+        # Create scrollable children for each tab
+        compat_scrolled = Gtk.ScrolledWindow()
+        compat_scrolled.set_vexpand(True)
         try:
-            self.incompat_expander.set_child(self.incompat_grid)
+            compat_scrolled.set_child(self.compat_grid)
+        except Exception:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            box.append(self.compat_grid)
+            compat_scrolled.set_child(box)
+
+        incompat_scrolled = Gtk.ScrolledWindow()
+        incompat_scrolled.set_vexpand(True)
+        try:
+            incompat_scrolled.set_child(self.incompat_grid)
         except Exception:
             box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             box2.append(self.incompat_grid)
-            self.incompat_expander.set_child(box2)
+            incompat_scrolled.set_child(box2)
 
-        self.sections_scrolled = Gtk.ScrolledWindow()
-        self.sections_scrolled.set_vexpand(True)
-        self.sections_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        self.sections_box.append(self.compat_expander)
-        self.sections_box.append(self.incompat_expander)
-        self.sections_scrolled.set_child(self.sections_box)
-        vbox.append(self.sections_scrolled)
+        # Workshop (online) grid for items not owned locally
+        self.workshop_grid = Gtk.Grid()
+        self.workshop_grid.set_row_spacing(12)
+        self.workshop_grid.set_column_spacing(12)
+        self.workshop_grid.set_margin_top(12)
+        self.workshop_grid.set_margin_bottom(12)
+        try:
+            self.workshop_grid.set_halign(Gtk.Align.CENTER)
+            self.workshop_grid.set_hexpand(False)
+        except Exception:
+            pass
+        try:
+            self.workshop_grid.get_style_context().add_class("grid-bg")
+        except Exception:
+            pass
+
+        workshop_scrolled = Gtk.ScrolledWindow()
+        workshop_scrolled.set_vexpand(True)
+        try:
+            workshop_scrolled.set_child(self.workshop_grid)
+        except Exception:
+            wb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            wb.append(self.workshop_grid)
+            workshop_scrolled.set_child(wb)
+
+        # Stack + StackSwitcher to act as static tabs
+        self.sections_stack = Gtk.Stack()
+        try:
+            self.sections_stack.add_titled(compat_scrolled, "compatible", "Compatible Wallpapers")
+            self.sections_stack.add_titled(incompat_scrolled, "incompatible", "Incompatible Wallpapers (scene projects)")
+        except Exception:
+            # fallback if add_titled not available
+            self.sections_stack.add_child(compat_scrolled)
+            self.sections_stack.add_child(incompat_scrolled)
+
+        stack_switcher = Gtk.StackSwitcher()
+        try:
+            stack_switcher.set_stack(self.sections_stack)
+        except Exception:
+            pass
+
+        tabs_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        try:
+            tabs_box.set_margin_top(6)
+        except Exception:
+            pass
+        tabs_box.append(stack_switcher)
+        tabs_box.append(self.sections_stack)
+        vbox.append(tabs_box)
+
+        # Connect to stack visibility changes to lazily load incompatible items
+        try:
+            def _on_stack_visible(stack, pspec):
+                try:
+                    vis = stack.get_visible_child()
+                    if vis is incompat_scrolled:
+                        if getattr(self, "incompat_loaded", False):
+                            return
+                        base = getattr(self, "last_workshop_dir", None)
+                        if not base:
+                            GLib.idle_add(self.lbl_status.set_text, "Please import wallpapers first to scan incompatible items")
+                            return
+                        self.incompat_loaded = True
+                        threading.Thread(target=self.scan_incompatible, args=(base,), daemon=True).start()
+                except Exception:
+                    pass
+
+            self.sections_stack.connect("notify::visible-child", _on_stack_visible)
+        except Exception:
+            pass
 
         # CSS styling
         try:
@@ -470,6 +664,29 @@ class WallpaperPicker(Gtk.Application):
                 background-color: #5a0000;
                 border-radius: 6px;
                 padding: 8px;
+            }
+            /* ensure card buttons have no padding and no outline offset */
+            .card > button,
+            .card button {
+                padding: 0;
+                outline-offset: 0;
+            }
+            .card label {
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            .card-overlay-label {
+                background-color: rgba(0,0,0,0.45);
+                color: #ffffff;
+                padding: 6px 8px;
+                margin: 0;
+                border-radius: 4px 4px 0 0;
+            }
+            .incompatible-frame button {  
+                padding: 0;
+            }
+            viewport {
+                background-color: #2c2c2c;
             }
             """
             provider = Gtk.CssProvider()
@@ -542,6 +759,19 @@ class WallpaperPicker(Gtk.Application):
         except Exception:
             pass
         try:
+            # hide metadata until a new selection is made
+            if hasattr(self, "meta_box"):
+                try:
+                    self.meta_box.set_visible(False)
+                    self.lbl_meta_res.set_text("Resolution: ")
+                    self.lbl_meta_dur.set_text("Duration: ")
+                    self.lbl_meta_size.set_text("Size: ")
+                    self.lbl_meta_created.set_text("Created: ")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
             # hide the main address bar once a working path is set
             try:
                 self.entry_path.set_visible(False)
@@ -581,27 +811,29 @@ class WallpaperPicker(Gtk.Application):
                     with open(json_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
 
-                    proj_type = data.get("type", "").lower()
+                    # Determine video file
+                    file_rel = data.get("file") or data.get("preview") or data.get("video")
+                    video_path = None
+                    if file_rel:
+                        candidate = os.path.join(item_dir, file_rel)
+                        if os.path.isfile(candidate) and candidate.lower().endswith((".mp4", ".webm", ".mkv")):
+                            video_path = candidate
 
-                    if proj_type == "scene":
-                        continue
-
-                    if proj_type not in ("video", "mp4", "webm"):
-                        continue
-
-                    file_rel = data.get("file") or data.get("preview")
-                    if not file_rel:
-                        continue
-
-                    video_path = os.path.join(item_dir, file_rel)
-                    if not os.path.isfile(video_path) or not video_path.lower().endswith((".mp4", ".webm", ".mkv")):
+                    # fallback: common filenames or any video file in folder
+                    if not video_path:
                         for cand in ("background.mp4", "background.webm", "project.mp4"):
                             vp = os.path.join(item_dir, cand)
                             if os.path.isfile(vp):
                                 video_path = vp
                                 break
-                        else:
-                            continue
+                    if not video_path:
+                        for fname in os.listdir(item_dir):
+                            if fname.lower().endswith((".mp4", ".webm", ".mkv")):
+                                video_path = os.path.join(item_dir, fname)
+                                break
+
+                    if not video_path:
+                        continue
 
                     title = data.get("title", item_id)
                     preview_static = None
@@ -656,11 +888,11 @@ class WallpaperPicker(Gtk.Application):
         while child := self.compat_grid.get_first_child():
             self.compat_grid.remove(child)
 
-    def make_preview_widget(self, preview_static, preview_gif, width, height):
+    def make_preview_widget(self, preview_static, preview_gif, width, height, autoplay=False):
         # Prioritize GIF animation if available
         if preview_gif and os.path.isfile(preview_gif):
             try:
-                animated = AnimatedGifImage(preview_gif, width, height)
+                animated = AnimatedGifImage(preview_gif, width, height, autoplay=autoplay, hover=not autoplay)
                 self.animated_widgets.append(animated)
                 return animated
             except Exception as e:
@@ -730,31 +962,95 @@ class WallpaperPicker(Gtk.Application):
         for i, item in enumerate(items):
             frame = Gtk.Frame()
             frame.add_css_class("card")
-
-            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-            vbox.set_margin_top(8)
-            vbox.set_margin_bottom(8)
-            vbox.set_margin_start(8)
-            vbox.set_margin_end(8)
             try:
+                frame.set_margin_top(0)
+                frame.set_margin_bottom(0)
+                frame.set_margin_start(0)
+                frame.set_margin_end(0)
+                frame.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+            except Exception:
+                pass
+
+            # make the button and contained box expand to fill the frame
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            try:
+                vbox.set_margin_top(0)
+                vbox.set_margin_bottom(0)
+                vbox.set_margin_start(0)
+                vbox.set_margin_end(0)
                 vbox.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+                vbox.set_hexpand(True)
+                vbox.set_vexpand(True)
+                vbox.set_halign(Gtk.Align.FILL)
+                vbox.set_valign(Gtk.Align.FILL)
             except Exception:
                 pass
 
             preview_static = item.get("preview")
             preview_gif = item.get("preview_gif")
             img_widget = self.make_preview_widget(preview_static, preview_gif, CARD_WIDTH, IMG_HEIGHT)
-            vbox.append(img_widget)
+            try:
+                img_widget.set_margin_top(0)
+                img_widget.set_margin_bottom(0)
+                img_widget.set_margin_start(0)
+                img_widget.set_margin_end(0)
+                img_widget.set_hexpand(True)
+                img_widget.set_vexpand(True)
+                img_widget.set_halign(Gtk.Align.FILL)
+                img_widget.set_valign(Gtk.Align.FILL)
+            except Exception:
+                pass
+            # Use an overlay so the label sits on top of the picture
+            overlay = Gtk.Overlay()
+            try:
+                overlay.set_size_request(CARD_WIDTH, IMG_HEIGHT)
+                overlay.set_hexpand(True)
+                overlay.set_halign(Gtk.Align.FILL)
+            except Exception:
+                pass
+            try:
+                overlay.set_child(img_widget)
+            except Exception:
+                try:
+                    overlay.add(img_widget)
+                except Exception:
+                    pass
 
             lbl = Gtk.Label(label=item["title"])
             lbl.set_wrap(True)
             lbl.set_wrap_mode(Pango.WrapMode.WORD)
             lbl.set_ellipsize(Pango.EllipsizeMode.END)
             lbl.set_max_width_chars(25)
-            lbl.set_size_request(CARD_WIDTH, LABEL_HEIGHT)
-            vbox.append(lbl)
+            try:
+                lbl.set_halign(Gtk.Align.CENTER)
+                lbl.set_valign(Gtk.Align.END)
+                lbl.set_xalign(0.5)
+                lbl.set_margin_start(0)
+                lbl.set_margin_end(0)
+            except Exception:
+                pass
+            try:
+                lbl.get_style_context().add_class("card-overlay-label")
+            except Exception:
+                pass
+            try:
+                overlay.add_overlay(lbl)
+            except Exception:
+                try:
+                    overlay.add_overlay(lbl)
+                except Exception:
+                    pass
+
+            vbox.append(overlay)
 
             btn = Gtk.Button()
+            try:
+                btn.set_hexpand(True)
+                btn.set_vexpand(True)
+                btn.set_halign(Gtk.Align.FILL)
+                btn.set_valign(Gtk.Align.FILL)
+            except Exception:
+                pass
             btn.set_child(vbox)
             btn.item_data = item
             btn.connect("clicked", self.on_wallpaper_clicked)
@@ -789,37 +1085,93 @@ class WallpaperPicker(Gtk.Application):
             frame = Gtk.Frame()
             try:
                 frame.get_style_context().add_class("incompatible-frame")
+                frame.set_margin_top(0)
+                frame.set_margin_bottom(0)
+                frame.set_margin_start(0)
+                frame.set_margin_end(0)
+                frame.set_size_request(CARD_WIDTH, CARD_HEIGHT)
             except Exception:
                 pass
 
-            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-            vbox.set_margin_top(8)
-            vbox.set_margin_bottom(8)
-            vbox.set_margin_start(8)
-            vbox.set_margin_end(8)
+            # make the button and contained box expand to fill the frame
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
             try:
+                vbox.set_margin_top(0)
+                vbox.set_margin_bottom(0)
+                vbox.set_margin_start(0)
+                vbox.set_margin_end(0)
                 vbox.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+                vbox.set_hexpand(True)
+                vbox.set_vexpand(True)
+                vbox.set_halign(Gtk.Align.FILL)
+                vbox.set_valign(Gtk.Align.FILL)
             except Exception:
                 pass
 
             preview_static = item.get("preview")
             preview_gif = item.get("preview_gif")
             img = self.make_preview_widget(preview_static, preview_gif, CARD_WIDTH, IMG_HEIGHT)
-            vbox.append(img)
+            try:
+                img.set_margin_top(0)
+                img.set_margin_bottom(0)
+                img.set_margin_start(0)
+                img.set_margin_end(0)
+                img.set_hexpand(True)
+                img.set_vexpand(True)
+                img.set_halign(Gtk.Align.FILL)
+                img.set_valign(Gtk.Align.FILL)
+            except Exception:
+                pass
+            # overlay the title on top of the image for incompatible items too
+            overlay = Gtk.Overlay()
+            try:
+                overlay.set_size_request(CARD_WIDTH, IMG_HEIGHT)
+                overlay.set_hexpand(True)
+                overlay.set_halign(Gtk.Align.FILL)
+            except Exception:
+                pass
+            try:
+                overlay.set_child(img)
+            except Exception:
+                try:
+                    overlay.add(img)
+                except Exception:
+                    pass
 
             lbl = Gtk.Label(label=item.get("title", ""))
             lbl.set_wrap(True)
             lbl.set_wrap_mode(Pango.WrapMode.WORD)
             lbl.set_ellipsize(Pango.EllipsizeMode.END)
             lbl.set_max_width_chars(25)
-            lbl.set_size_request(CARD_WIDTH, LABEL_HEIGHT)
             try:
-                lbl.get_style_context().add_class("incompatible-title")
+                lbl.set_halign(Gtk.Align.CENTER)
+                lbl.set_valign(Gtk.Align.END)
+                lbl.set_xalign(0.5)
+                lbl.set_margin_start(0)
+                lbl.set_margin_end(0)
             except Exception:
                 pass
-            vbox.append(lbl)
+            try:
+                lbl.get_style_context().add_class("card-overlay-label")
+            except Exception:
+                pass
+            try:
+                overlay.add_overlay(lbl)
+            except Exception:
+                try:
+                    overlay.add_overlay(lbl)
+                except Exception:
+                    pass
+            vbox.append(overlay)
 
             btn = Gtk.Button()
+            try:
+                btn.set_hexpand(True)
+                btn.set_vexpand(True)
+                btn.set_halign(Gtk.Align.FILL)
+                btn.set_valign(Gtk.Align.FILL)
+            except Exception:
+                pass
             btn.set_child(vbox)
             try:
                 btn.set_sensitive(False)
@@ -880,6 +1232,75 @@ class WallpaperPicker(Gtk.Application):
         except Exception as e:
             GLib.idle_add(self.lbl_status.set_text, f"Error scanning incompatible items: {e}")
 
+    def _human_size(self, size_bytes: int) -> str:
+        try:
+            if size_bytes < 1024:
+                return f"{size_bytes} B"
+            for unit in ["KB", "MB", "GB", "TB"]:
+                size_bytes /= 1024.0
+                if size_bytes < 1024.0:
+                    return f"{size_bytes:.1f} {unit}"
+        except Exception:
+            pass
+        return "Unknown"
+
+    def _format_duration(self, seconds: float) -> str:
+        try:
+            secs = int(seconds)
+            m, s = divmod(secs, 60)
+            h, m = divmod(m, 60)
+            if h:
+                return f"{h:02d}:{m:02d}:{s:02d}"
+            return f"{m:02d}:{s:02d}"
+        except Exception:
+            return "Unknown"
+
+    def get_video_metadata(self, path: str) -> dict:
+        meta = {"width": None, "height": None, "duration": None, "size": None, "created": None}
+        try:
+            if path and os.path.isfile(path):
+                meta["size"] = os.path.getsize(path)
+                try:
+                    meta["created"] = datetime.fromtimestamp(os.path.getctime(path))
+                except Exception:
+                    meta["created"] = None
+
+                # Try ffprobe for resolution and duration if available
+                if shutil.which("ffprobe"):
+                    try:
+                        cmd = [
+                            "ffprobe",
+                            "-v", "error",
+                            "-select_streams", "v:0",
+                            "-show_entries", "stream=width,height,duration",
+                            "-of", "json",
+                            path,
+                        ]
+                        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                        if res.returncode == 0 and res.stdout:
+                            try:
+                                jd = json.loads(res.stdout)
+                                streams = jd.get("streams") or []
+                                if streams:
+                                    s = streams[0]
+                                    meta["width"] = int(s.get("width")) if s.get("width") else None
+                                    meta["height"] = int(s.get("height")) if s.get("height") else None
+                                    # duration may be string
+                                    dur = s.get("duration") or None
+                                    if dur:
+                                        try:
+                                            meta["duration"] = float(dur)
+                                        except Exception:
+                                            meta["duration"] = None
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+        except Exception:
+            pass
+        return meta
+
     def on_wallpaper_clicked(self, button):
         item = button.item_data
         video_path = item["video"]
@@ -897,6 +1318,75 @@ class WallpaperPicker(Gtk.Application):
             )
         except Exception:
             self.lbl_selected_title.set_text(item.get("title", "Selected"))
+
+        # Update the selected thumbnail to show preview (static or gif)
+        try:
+            if hasattr(self, "selected_thumb_box"):
+                try:
+                    while child := self.selected_thumb_box.get_first_child():
+                        self.selected_thumb_box.remove(child)
+                except Exception:
+                    pass
+
+                try:
+                    thumb = self.make_preview_widget(item.get("preview"), item.get("preview_gif"), 180, 180, autoplay=True)
+                    self.selected_thumb_box.append(thumb)
+                except Exception:
+                    pass
+                try:
+                    # If the thumb is an AnimatedGifImage, start its animation immediately
+                    if isinstance(thumb, AnimatedGifImage):
+                        try:
+                            thumb.start_animation()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                # Populate metadata label under the title
+                try:
+                    vid = item.get("video")
+                    meta = self.get_video_metadata(vid)
+                    # Resolution
+                    try:
+                        if meta.get("width") and meta.get("height"):
+                            self.lbl_meta_res.set_text(f"Resolution: {meta['width']}×{meta['height']}")
+                        else:
+                            self.lbl_meta_res.set_text("Resolution: —")
+                    except Exception:
+                        pass
+                    # Duration
+                    try:
+                        if meta.get("duration"):
+                            self.lbl_meta_dur.set_text(f"Duration: {self._format_duration(meta['duration'])}")
+                        else:
+                            self.lbl_meta_dur.set_text("Duration: —")
+                    except Exception:
+                        pass
+                    # Size
+                    try:
+                        if meta.get("size") is not None:
+                            self.lbl_meta_size.set_text(f"Size: {self._human_size(meta['size'])}")
+                        else:
+                            self.lbl_meta_size.set_text("Size: —")
+                    except Exception:
+                        pass
+                    # Created
+                    try:
+                        if meta.get("created"):
+                            self.lbl_meta_created.set_text(f"Created: {meta['created'].strftime('%Y-%m-%d %H:%M')}")
+                        else:
+                            self.lbl_meta_created.set_text("Created: —")
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, "meta_box"):
+                            self.meta_box.set_visible(True)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         short_path = video_path.replace(str(Path.home()), "~")
         self.lbl_status.set_text(f"Applying: {short_path} …")
