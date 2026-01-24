@@ -3,6 +3,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Gio, GLib, Gdk, GdkPixbuf, Pango
+import cairo
+import math
 import json
 import os
 import subprocess
@@ -272,6 +274,110 @@ class AnimatedGifImage(Gtk.Picture):
             if getattr(self, 'timeout_id', None):
                 GLib.source_remove(self.timeout_id)
                 self.timeout_id = None
+        except Exception:
+            pass
+
+
+class RotatingSpinner(Gtk.DrawingArea):
+    """Simple rotating spinner drawn with Cairo on a Gtk.DrawingArea.
+
+    Call `start()` to begin rotating and `stop()` to stop. Rotation runs
+    on the GTK main loop via GLib.timeout_add.
+    """
+    def __init__(self, size=48):
+        super().__init__()
+        try:
+            self.set_size_request(size, size)
+        except Exception:
+            pass
+        self._angle = 0.0  # degrees
+        self._running = False
+        self._timeout_id = None
+        try:
+            self.set_draw_func(self._on_draw)
+        except Exception:
+            try:
+                self.connect('snapshot', self._on_snapshot)
+            except Exception:
+                try:
+                    self.connect('draw', self._on_snapshot)
+                except Exception:
+                    pass
+
+    def _on_draw(self, area, cr, width, height):
+        try:
+            w = width
+            h = height
+            size = min(max(1, w), max(1, h))
+            cx = w / 2.0
+            cy = h / 2.0
+            radius = size * 0.35
+
+            cr.save()
+            cr.translate(cx, cy)
+            # rotate by current angle in radians
+            cr.rotate(math.radians(self._angle))
+
+            # draw a faint circular background ring
+            cr.set_line_width(max(2.0, size * 0.06))
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.12)
+            cr.arc(0, 0, radius, 0, 2 * math.pi)
+            cr.stroke()
+
+            # draw an arc segment (the visible spinner)
+            try:
+                cr.set_line_cap(cairo.LINE_CAP_ROUND)
+            except Exception:
+                pass
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.95)
+            start = 0
+            end = 2.0 * math.pi * 0.6
+            cr.arc(0, 0, radius, start, end)
+            cr.stroke()
+
+            cr.restore()
+        except Exception:
+            pass
+
+    # fallback snapshot handler if set_draw_func wasn't available
+    def _on_snapshot(self, widget, snapshot):
+        try:
+            cr = snapshot.append_cairo()
+            w = self.get_allocated_width()
+            h = self.get_allocated_height()
+            self._on_draw(widget, cr, w, h)
+        except Exception:
+            pass
+
+    def _tick(self):
+        try:
+            self._angle = (self._angle + 12.0) % 360.0
+            try:
+                self.queue_draw()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def start(self):
+        try:
+            if not self._running:
+                self._running = True
+                if not self._timeout_id:
+                    self._timeout_id = GLib.timeout_add(40, self._tick)
+        except Exception:
+            pass
+
+    def stop(self):
+        try:
+            self._running = False
+            if self._timeout_id:
+                try:
+                    GLib.source_remove(self._timeout_id)
+                except Exception:
+                    pass
+                self._timeout_id = None
         except Exception:
             pass
 
@@ -690,21 +796,94 @@ class WallpaperPicker(Gtk.Application):
         # Create scrollable children for each tab
         compat_scrolled = Gtk.ScrolledWindow()
         compat_scrolled.set_vexpand(True)
+        # Create an overlay so the spinner can sit centered over the grid without moving layout
         try:
-            compat_scrolled.set_child(self.compat_grid)
+            compat_overlay = Gtk.Overlay()
+            try:
+                compat_overlay.set_child(self.compat_grid)
+            except Exception:
+                try:
+                    compat_overlay.add(self.compat_grid)
+                except Exception:
+                    pass
+            try:
+                self.compat_spinner = RotatingSpinner(48)
+                try:
+                    self.compat_spinner.set_halign(Gtk.Align.CENTER)
+                    self.compat_spinner.set_valign(Gtk.Align.CENTER)
+                except Exception:
+                    pass
+                try:
+                    self.compat_spinner.set_visible(False)
+                except Exception:
+                    pass
+                try:
+                    compat_overlay.add_overlay(self.compat_spinner)
+                except Exception:
+                    try:
+                        compat_overlay.add(self.compat_spinner)
+                    except Exception:
+                        pass
+            except Exception:
+                self.compat_spinner = None
+            try:
+                compat_scrolled.set_child(compat_overlay)
+            except Exception:
+                box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                box.append(compat_overlay)
+                compat_scrolled.set_child(box)
         except Exception:
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            box.append(self.compat_grid)
-            compat_scrolled.set_child(box)
+            try:
+                compat_scrolled.set_child(self.compat_grid)
+            except Exception:
+                box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                box.append(self.compat_grid)
+                compat_scrolled.set_child(box)
 
         incompat_scrolled = Gtk.ScrolledWindow()
         incompat_scrolled.set_vexpand(True)
         try:
-            incompat_scrolled.set_child(self.incompat_grid)
+            incompat_overlay = Gtk.Overlay()
+            try:
+                incompat_overlay.set_child(self.incompat_grid)
+            except Exception:
+                try:
+                    incompat_overlay.add(self.incompat_grid)
+                except Exception:
+                    pass
+            try:
+                self.incompat_spinner = RotatingSpinner(48)
+                try:
+                    self.incompat_spinner.set_halign(Gtk.Align.CENTER)
+                    self.incompat_spinner.set_valign(Gtk.Align.CENTER)
+                except Exception:
+                    pass
+                try:
+                    self.incompat_spinner.set_visible(False)
+                except Exception:
+                    pass
+                try:
+                    incompat_overlay.add_overlay(self.incompat_spinner)
+                except Exception:
+                    try:
+                        incompat_overlay.add(self.incompat_spinner)
+                    except Exception:
+                        pass
+            except Exception:
+                self.incompat_spinner = None
+            try:
+                incompat_scrolled.set_child(incompat_overlay)
+            except Exception:
+                box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                box2.append(incompat_overlay)
+                incompat_scrolled.set_child(box2)
         except Exception:
-            box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            box2.append(self.incompat_grid)
-            incompat_scrolled.set_child(box2)
+            try:
+                incompat_scrolled.set_child(self.incompat_grid)
+            except Exception:
+                box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                box2.append(self.incompat_grid)
+                incompat_scrolled.set_child(box2)
 
         # Workshop (online) grid for items not owned locally
         self.workshop_grid = Gtk.Grid()
@@ -825,8 +1004,40 @@ class WallpaperPicker(Gtk.Application):
             except Exception:
                 pass
 
-            # then append the workshop grid below
-            browse_box.append(self.workshop_grid)
+            # then append the workshop grid below (with its own spinner viewport)
+            try:
+                # workshop overlay wrapper with spinner (centred overlay)
+                workshop_overlay = Gtk.Overlay()
+                try:
+                    workshop_overlay.set_child(self.workshop_grid)
+                except Exception:
+                    try:
+                        workshop_overlay.add(self.workshop_grid)
+                    except Exception:
+                        pass
+                try:
+                    self.workshop_spinner = RotatingSpinner(48)
+                    try:
+                        self.workshop_spinner.set_halign(Gtk.Align.CENTER)
+                        self.workshop_spinner.set_valign(Gtk.Align.CENTER)
+                    except Exception:
+                        pass
+                    try:
+                        self.workshop_spinner.set_visible(False)
+                    except Exception:
+                        pass
+                    try:
+                        workshop_overlay.add_overlay(self.workshop_spinner)
+                    except Exception:
+                        try:
+                            workshop_overlay.add(self.workshop_spinner)
+                        except Exception:
+                            pass
+                except Exception:
+                    self.workshop_spinner = None
+                browse_box.append(workshop_overlay)
+            except Exception:
+                browse_box.append(self.workshop_grid)
             workshop_scrolled.set_child(browse_box)
         except Exception:
             wb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -881,6 +1092,15 @@ class WallpaperPicker(Gtk.Application):
                             GLib.idle_add(self.lbl_status.set_text, "Please import wallpapers first to scan incompatible items")
                             return
                         self.incompat_loaded = True
+                        # start incompat spinner while scanning
+                        try:
+                            if getattr(self, 'incompat_spinner', None):
+                                try:
+                                    GLib.idle_add(self._start_spinner, 'incompat_spinner')
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                         threading.Thread(target=self.scan_incompatible, args=(base,), daemon=True).start()
                 except Exception:
                     pass
@@ -929,10 +1149,49 @@ class WallpaperPicker(Gtk.Application):
                 margin-left: 400px;
                 margin-right: 400px;
             }
+            /* input error outline */
+            .input-error {
+                border: 1px solid #ff4d4d;
+                border-radius: 4px;
+            }
             """
             provider = Gtk.CssProvider()
             provider.load_from_data(css)
             Gtk.StyleContext.add_provider_for_display(win.get_display(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        except Exception:
+            pass
+
+        # Helper methods to start/stop spinners safely on the main loop
+        def _start_spinner_by_name(name):
+            try:
+                sp = getattr(self, name, None)
+                if sp:
+                    try:
+                        sp.set_visible(True)
+                        sp.start()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return False
+
+        def _stop_spinner_by_name(name):
+            try:
+                sp = getattr(self, name, None)
+                if sp:
+                    try:
+                        sp.stop()
+                        sp.set_visible(False)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return False
+
+        # attach helpers to self so other methods can GLib.idle_add them
+        try:
+            self._start_spinner = lambda name: _start_spinner_by_name(name)
+            self._stop_spinner = lambda name: _stop_spinner_by_name(name)
         except Exception:
             pass
 
@@ -1237,6 +1496,16 @@ class WallpaperPicker(Gtk.Application):
         self.lbl_status.set_text("Scanning... (this may take a while)")
         button.set_sensitive(False)
 
+        # show/start compat spinner while scanning (schedule on main loop)
+        try:
+            if getattr(self, 'compat_spinner', None):
+                try:
+                    GLib.idle_add(self._start_spinner, 'compat_spinner')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         threading.Thread(target=self.scan_wallpapers, args=(path, button), daemon=True).start()
         # Immediately probe for a first valid item (fast) and show its metadata so the UI updates right away
         try:
@@ -1521,17 +1790,28 @@ class WallpaperPicker(Gtk.Application):
                 except Exception:
                     st = {}
 
-                addp = None
+                # support multiple additional MP4 search paths (migrates old single-value key)
                 try:
-                    if isinstance(st, dict):
-                        addp = st.get("additional_mp4_path") or None
-                except Exception:
-                    addp = None
-
-                if addp:
+                    paths = []
                     try:
-                        addp_path = Path(addp).expanduser()
-                        if addp_path.exists() and addp_path.is_dir():
+                        if isinstance(st, dict):
+                            paths = list(st.get('additional_mp4_paths') or [])
+                    except Exception:
+                        paths = []
+                    # migrate old single-value key if present
+                    try:
+                        if not paths and isinstance(st, dict):
+                            old = st.get('additional_mp4_path')
+                            if old:
+                                paths = [old]
+                    except Exception:
+                        pass
+
+                    for addp in paths:
+                        try:
+                            addp_path = Path(addp).expanduser()
+                            if not (addp_path.exists() and addp_path.is_dir()):
+                                continue
                             # Walk the folder tree and find mp4 files
                             for root, dirs, files in os.walk(str(addp_path)):
                                 for fname in files:
@@ -1605,16 +1885,35 @@ class WallpaperPicker(Gtk.Application):
                                         })
                                     except Exception:
                                         pass
-                            # Update UI to reflect added mp4 count and refresh grid
-                            GLib.idle_add(self.lbl_status.set_text, f"Found {len(items)} compatible wallpapers (+external mp4s)")
-                            GLib.idle_add(self.show_items, items)
-                    except Exception:
-                        pass
+                        except Exception:
+                            pass
+                    # Update UI to reflect added mp4 count and refresh grid
+                    GLib.idle_add(self.lbl_status.set_text, f"Found {len(items)} compatible wallpapers (+external mp4s)")
+                    GLib.idle_add(self.show_items, items)
+                except Exception:
+                    pass
             except Exception:
                 pass
         except Exception as e:
             GLib.idle_add(self.lbl_status.set_text, f"Error: {str(e)}")
         finally:
+            # ensure spinners are stopped on error/finish
+            try:
+                if getattr(self, 'compat_spinner', None):
+                    try:
+                        GLib.idle_add(self._stop_spinner, 'compat_spinner')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                if getattr(self, 'workshop_spinner', None):
+                    try:
+                        GLib.idle_add(self._stop_spinner, 'workshop_spinner')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             GLib.idle_add(button.set_sensitive, True)
 
     def clear_grid(self):
@@ -1713,6 +2012,24 @@ class WallpaperPicker(Gtk.Application):
         return p
 
     def show_items(self, items):
+        # stop/hide any loading spinners now that items are available
+        try:
+            if getattr(self, 'compat_spinner', None):
+                try:
+                    GLib.idle_add(self._stop_spinner, 'compat_spinner')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if getattr(self, 'workshop_spinner', None):
+                try:
+                    GLib.idle_add(self._stop_spinner, 'workshop_spinner')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         try:
             self.items_list = items
         except Exception:
@@ -2003,6 +2320,16 @@ class WallpaperPicker(Gtk.Application):
             pass
 
     def show_incompatible_items(self, items):
+        # stop/hide incompatible spinner now that incompatible items are available
+        try:
+            if getattr(self, 'incompat_spinner', None):
+                try:
+                    GLib.idle_add(self._stop_spinner, 'incompat_spinner')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         cols = 5
         CARD_WIDTH = 180
         CARD_HEIGHT = 180
@@ -2157,6 +2484,15 @@ class WallpaperPicker(Gtk.Application):
 
             GLib.idle_add(self.show_incompatible_items, items)
             GLib.idle_add(self.lbl_status.set_text, f"Found {len(items)} incompatible wallpapers")
+            # stop/hide incompatible spinner
+            try:
+                if getattr(self, 'incompat_spinner', None):
+                    try:
+                        GLib.idle_add(self._stop_spinner, 'incompat_spinner')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception as e:
             GLib.idle_add(self.lbl_status.set_text, f"Error scanning incompatible items: {e}")
 
@@ -2697,10 +3033,10 @@ class WallpaperPicker(Gtk.Application):
 3. Install "Smart Video Wallpaper Reborn"
 4. Open Steam and Download "Wallpaper Engine"
 5. Go to Steam Library
-6. Right click "Wallpaper Engine"
+6. Right click "Wallpaper Engine" from the left menu
 7. Select Manage > Browse Local Files
 8. Copy the file path from address bar
-9. Paste it here and click "Import Wallpapers"
+9. Paste it here and click "Apply"
 """
             lbl = Gtk.Label()
             lbl.set_text(help_text)
@@ -2813,7 +3149,7 @@ class WallpaperPicker(Gtk.Application):
             settings_box.append(lbl)
             settings_box.append(hbox_entry)
 
-            # Additional custom MP4 search path (user can add another folder to scan for mp4s)
+            # Additional custom MP4 search paths (user can add multiple folders)
             try:
                 state = {}
                 try:
@@ -2823,9 +3159,9 @@ class WallpaperPicker(Gtk.Application):
 
                 add_title = Gtk.Label()
                 try:
-                    add_title.set_markup("<span weight='bold' size='14000'>Additional MP4 Search Path</span>")
+                    add_title.set_markup("<span weight='bold' size='14000'>Additional MP4 Search Paths</span>")
                 except Exception:
-                    add_title.set_text("Additional MP4 Search Path")
+                    add_title.set_text("Additional MP4 Search Paths")
                 try:
                     add_title.set_halign(Gtk.Align.START)
                     add_title.set_margin_top(6)
@@ -2833,49 +3169,295 @@ class WallpaperPicker(Gtk.Application):
                 except Exception:
                     pass
 
+                # container that will hold multiple rows of (Entry + Add)
+                paths_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+                # helper to persist a path into state list
+                def _save_path_to_state(path_text):
+                    try:
+                        if not path_text:
+                            return
+                        st = {}
+                        try:
+                            st = self.load_state() if hasattr(self, 'load_state') else {}
+                        except Exception:
+                            st = {}
+                        lst = []
+                        try:
+                            if isinstance(st, dict):
+                                lst = list(st.get('additional_mp4_paths') or [])
+                        except Exception:
+                            lst = []
+                        # append if not present
+                        if path_text and path_text not in lst:
+                            lst.append(path_text)
+                        try:
+                            self.save_state({'additional_mp4_paths': lst})
+                        except Exception:
+                            pass
+                        try:
+                            if hasattr(self, 'lbl_status'):
+                                self.lbl_status.set_text(f"Saved additional MP4 path: {path_text}")
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                # helper to remove a path from saved state
+                def _remove_path_from_state(path_text):
+                    try:
+                        if not path_text:
+                            return
+                        st = {}
+                        try:
+                            st = self.load_state() if hasattr(self, 'load_state') else {}
+                        except Exception:
+                            st = {}
+                        lst = []
+                        try:
+                            if isinstance(st, dict):
+                                lst = list(st.get('additional_mp4_paths') or [])
+                        except Exception:
+                            lst = []
+                        try:
+                            if path_text in lst:
+                                lst.remove(path_text)
+                        except Exception:
+                            pass
+                        try:
+                            self.save_state({'additional_mp4_paths': lst})
+                        except Exception:
+                            pass
+                        try:
+                            if hasattr(self, 'lbl_status'):
+                                self.lbl_status.set_text(f"Removed additional MP4 path: {path_text}")
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                # factory to create a new row containing an Entry and an Add button
+                def make_path_row(initial_text=""):
+                    try:
+                        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                        entry = Gtk.Entry()
+                        try:
+                            entry.set_hexpand(True)
+                            entry.set_placeholder_text("Path to folder containing additional .mp4 files")
+                            entry.set_text(initial_text or "")
+                            # remove error styling when the user edits
+                            try:
+                                def _on_changed(ev):
+                                    try:
+                                        ev.get_style_context().remove_class('input-error')
+                                        ev.set_tooltip_text(None)
+                                    except Exception:
+                                        pass
+                                entry.connect('changed', _on_changed)
+                            except Exception:
+                                pass
+                            if initial_text:
+                                try:
+                                    entry.set_editable(False)
+                                    entry.set_sensitive(False)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+
+                        # If an initial non-empty path is provided, show a Delete button
+                        def make_delete_button(path_val, target_row):
+                            def _on_delete_clicked(btn):
+                                try:
+                                    # remove from UI
+                                    try:
+                                        if target_row.get_parent():
+                                            parent = target_row.get_parent()
+                                            try:
+                                                parent.remove(target_row)
+                                            except Exception:
+                                                try:
+                                                    # fallback: hide
+                                                    target_row.set_visible(False)
+                                                except Exception:
+                                                    pass
+                                    except Exception:
+                                        pass
+                                    # remove from state
+                                    try:
+                                        _remove_path_from_state(path_val)
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    pass
+                            btn = Gtk.Button(label="Delete")
+                            btn.connect("clicked", _on_delete_clicked)
+                            return btn
+
+                        def _on_add_clicked(btn):
+                            try:
+                                txt = entry.get_text().strip()
+                                if not txt:
+                                    return
+                                # duplicate check against saved state
+                                try:
+                                    st = {}
+                                    try:
+                                        st = self.load_state() if hasattr(self, 'load_state') else {}
+                                    except Exception:
+                                        st = {}
+                                    saved = []
+                                    try:
+                                        if isinstance(st, dict):
+                                            saved = list(st.get('additional_mp4_paths') or [])
+                                    except Exception:
+                                        saved = []
+                                    if txt in saved:
+                                        try:
+                                            entry.get_style_context().add_class('input-error')
+                                            entry.set_tooltip_text('This path is already added')
+                                            entry.grab_focus()
+                                        except Exception:
+                                            pass
+                                        return
+                                except Exception:
+                                    pass
+                                # duplicate check against other UI rows
+                                try:
+                                    for other in list(paths_container.get_children()):
+                                        try:
+                                            # find entry widget in the other row
+                                            for child in other.get_children():
+                                                try:
+                                                    if child is entry:
+                                                        continue
+                                                    if isinstance(child, Gtk.Entry):
+                                                        if child.get_text().strip() == txt:
+                                                            try:
+                                                                entry.get_style_context().add_class('input-error')
+                                                                entry.set_tooltip_text('This path is already present')
+                                                                entry.grab_focus()
+                                                            except Exception:
+                                                                pass
+                                                            raise StopIteration
+                                                except Exception:
+                                                    pass
+                                        except StopIteration:
+                                            return
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    pass
+                                try:
+                                    _save_path_to_state(txt)
+                                except Exception:
+                                    pass
+                                # convert this row's Add button into a Delete button
+                                try:
+                                    # make entry non-editable/greyed out
+                                    try:
+                                        entry.set_editable(False)
+                                        entry.set_sensitive(False)
+                                    except Exception:
+                                        pass
+                                    # remove the Add button (if present) and append a Delete button
+                                    try:
+                                        # prefer to remove the specific add_btn if available
+                                        try:
+                                            if 'add_btn' in locals() and add_btn is not None:
+                                                try:
+                                                    row.remove(add_btn)
+                                                except Exception:
+                                                    try:
+                                                        add_btn.set_visible(False)
+                                                    except Exception:
+                                                        pass
+                                        except Exception:
+                                            pass
+                                        # fallback: remove any remaining button children
+                                        try:
+                                            for child in list(row.get_children()):
+                                                try:
+                                                    if isinstance(child, Gtk.Button):
+                                                        try:
+                                                            row.remove(child)
+                                                        except Exception:
+                                                            try:
+                                                                child.set_visible(False)
+                                                            except Exception:
+                                                                pass
+                                                except Exception:
+                                                    pass
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                    # create delete button bound to this txt and this row
+                                    del_btn = make_delete_button(txt, row)
+                                    row.append(del_btn)
+                                except Exception:
+                                    pass
+                                # append a new blank row below this one
+                                try:
+                                    new_row = make_path_row("")
+                                    paths_container.append(new_row)
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+
+                        add_btn = Gtk.Button(label="Add")
+                        add_btn.connect("clicked", _on_add_clicked)
+                        row.append(entry)
+                        # if initial text exists, create a Delete button instead
+                        if initial_text:
+                            try:
+                                del_btn = make_delete_button(initial_text, row)
+                                row.append(del_btn)
+                            except Exception:
+                                row.append(add_btn)
+                        else:
+                            row.append(add_btn)
+                        return row
+                    except Exception:
+                        return Gtk.Box()
+
+                # preload any existing saved paths
                 try:
-                    custom_entry = Gtk.Entry()
-                    existing = ""
-                    try:
-                        if isinstance(state, dict):
-                            existing = state.get("additional_mp4_path", "") or ""
-                    except Exception:
-                        existing = ""
-                    try:
-                        custom_entry.set_text(existing)
-                    except Exception:
-                        pass
-                    custom_entry.set_placeholder_text("Path to folder containing additional .mp4 files")
-                    custom_entry.set_hexpand(True)
+                    existing_list = []
+                    if isinstance(state, dict):
+                        existing_list = list(state.get('additional_mp4_paths') or [])
+                    # if old single-value key exists, migrate it
+                    if not existing_list:
+                        try:
+                            old = state.get('additional_mp4_path') if isinstance(state, dict) else None
+                            if old:
+                                existing_list = [old]
+                        except Exception:
+                            pass
+                    # create rows for each existing path
+                    if existing_list:
+                        for p in existing_list:
+                            try:
+                                paths_container.append(make_path_row(p))
+                            except Exception:
+                                pass
+                        # always append a blank row after existing paths to allow adding more
+                        try:
+                            paths_container.append(make_path_row(''))
+                        except Exception:
+                            pass
+                    else:
+                        # start with one blank row
+                        paths_container.append(make_path_row(''))
                 except Exception:
-                    custom_entry = None
-
-                def on_add_clicked(btn):
                     try:
-                        if custom_entry:
-                            newp = custom_entry.get_text().strip()
-                            try:
-                                self.save_state({"additional_mp4_path": newp})
-                            except Exception:
-                                pass
-                            try:
-                                # give feedback in the main status label if available
-                                if hasattr(self, 'lbl_status'):
-                                    self.lbl_status.set_text(f"Saved additional MP4 path: {newp}")
-                            except Exception:
-                                pass
+                        paths_container.append(make_path_row(''))
                     except Exception:
                         pass
-
-                hbox_custom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-                if custom_entry:
-                    hbox_custom.append(custom_entry)
-                add_btn = Gtk.Button(label="Add")
-                add_btn.connect("clicked", on_add_clicked)
-                hbox_custom.append(add_btn)
 
                 settings_box.append(add_title)
-                settings_box.append(hbox_custom)
+                settings_box.append(paths_container)
             except Exception:
                 pass
 
