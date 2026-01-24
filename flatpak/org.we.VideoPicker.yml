@@ -1,0 +1,23 @@
+app-id: org.we.VideoPicker
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+command: we-video-picker
+modules:
+  - name: we-video-picker
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 we-video-picker.py /app/bin/we-video-picker
+      - install -Dm644 flatpak/org.we.VideoPicker.desktop /app/share/applications/org.we.VideoPicker.desktop
+      - install -Dm644 flatpak/we-video-picker.svg /app/share/icons/hicolor/scalable/apps/org.we.VideoPicker.svg
+    sources:
+      - type: dir
+        path: .
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=x11
+  - --talk-name=org.freedesktop.Notifications
+  - --device=dri
+  - --filesystem=home

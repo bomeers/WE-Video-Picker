@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 from datetime import datetime
 import shutil
+import hashlib
 
 # ================= CONFIG =================
 WE_WORKSHOP_DEFAULT = str(Path.home() / ".var/app/com.valvesoftware.Steam/.steam/steam/steamapps/workshop/content/431960")
@@ -402,10 +403,21 @@ class WallpaperPicker(Gtk.Application):
                 # small padding to the right of the preview image
                 try:
                     self.selected_thumb_box.set_margin_end(8)
+                    try:
+                        # ensure the selected thumbnail area stays a fixed square
+                        self.selected_thumb_box.set_size_request(180, 180)
+                        self.selected_thumb_box.set_hexpand(False)
+                        self.selected_thumb_box.set_vexpand(False)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
                 # placeholder empty image
                 placeholder = Gtk.Picture()
+                try:
+                    placeholder.set_content_fit(Gtk.ContentFit.COVER)
+                except Exception:
+                    pass
                 placeholder.set_size_request(180, 180)
                 self.selected_thumb_box.append(placeholder)
             except Exception:
@@ -748,7 +760,7 @@ class WallpaperPicker(Gtk.Application):
                     except Exception:
                         pass
                     try:
-                        title_lbl.set_margin_top(12)
+                        title_lbl.set_margin_top(100)
                         title_lbl.set_margin_bottom(2)
                     except Exception:
                         pass
@@ -929,6 +941,8 @@ class WallpaperPicker(Gtk.Application):
         # Display current video wallpaper preview and title on startup
         def _display_current_wallpaper():
             try:
+                if getattr(self, "_import_failed", False):
+                    return False
                 current_data = get_current_video_wallpaper_data()
                 if current_data and current_data.get("title"):
                     try:
@@ -943,21 +957,68 @@ class WallpaperPicker(Gtk.Application):
                         if hasattr(self, "selected_thumb_box"):
                             # Clear placeholder
                             while child := self.selected_thumb_box.get_first_child():
-                                self.selected_thumb_box.remove(child)
-                            
-                            # Load preview
-                            thumb = self.make_preview_widget(
-                                current_data.get("preview"),
-                                current_data.get("preview_gif"),
-                                180, 180,
-                                autoplay=True
-                            )
-                            self.selected_thumb_box.append(thumb)
-                            if isinstance(thumb, AnimatedGifImage):
                                 try:
-                                    thumb.start_animation()
+                                    if hasattr(child, "cleanup"):
+                                        try:
+                                            child.cleanup()
+                                        except Exception:
+                                            pass
                                 except Exception:
                                     pass
+                                self.selected_thumb_box.remove(child)
+                            
+                            # Load a static preview (do not autoplay GIFs here)
+                            thumb = self._create_square_picture(
+                                current_data.get("preview"),
+                                current_data.get("preview_gif"),
+                                180
+                            )
+                            try:
+                                try:
+                                    thumb.set_content_fit(Gtk.ContentFit.COVER)
+                                except Exception:
+                                    pass
+                                thumb.set_size_request(180, 180)
+                                try:
+                                    thumb.set_hexpand(False)
+                                    thumb.set_vexpand(False)
+                                except Exception:
+                                    pass
+                                try:
+                                    thumb.set_halign(Gtk.Align.START)
+                                    thumb.set_valign(Gtk.Align.START)
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+                            wrapper = Gtk.Box()
+                            try:
+                                wrapper.set_size_request(180, 180)
+                                wrapper.set_hexpand(False)
+                                wrapper.set_vexpand(False)
+                                wrapper.set_halign(Gtk.Align.CENTER)
+                                wrapper.set_valign(Gtk.Align.CENTER)
+                            except Exception:
+                                pass
+                            try:
+                                wrapper.append(thumb)
+                            except Exception:
+                                try:
+                                    wrapper.add(thumb)
+                                except Exception:
+                                    pass
+                            try:
+                                inner = thumb
+                                def _cleanup_inner():
+                                    try:
+                                        if hasattr(inner, 'cleanup'):
+                                            inner.cleanup()
+                                    except Exception:
+                                        pass
+                                wrapper.cleanup = _cleanup_inner
+                            except Exception:
+                                pass
+                            self.selected_thumb_box.append(wrapper)
                     except Exception:
                         pass
                     
@@ -1079,6 +1140,41 @@ class WallpaperPicker(Gtk.Application):
                     display = base_msg
             except Exception:
                 display = base_msg
+
+            # Mark import as failed and clear selected preview/title/metadata when import fails
+            try:
+                self._import_failed = True
+            except Exception:
+                pass
+            # Clear selected preview/title/metadata when import fails
+            try:
+                try:
+                    if hasattr(self, "selected_thumb_box") and self.selected_thumb_box is not None:
+                        while child := self.selected_thumb_box.get_first_child():
+                            try:
+                                if hasattr(child, "cleanup"):
+                                    try:
+                                        child.cleanup()
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            self.selected_thumb_box.remove(child)
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, "lbl_selected_title") and self.lbl_selected_title is not None:
+                        self.lbl_selected_title.set_text("")
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, "meta_box") and self.meta_box is not None:
+                        self.meta_box.set_visible(False)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
             try:
                 self.lbl_status.set_text(display)
             except Exception:
@@ -1089,6 +1185,10 @@ class WallpaperPicker(Gtk.Application):
         try:
             # reset failure counter on successful detection
             self._import_fail_count = 0
+            try:
+                self._import_failed = False
+            except Exception:
+                pass
         except Exception:
             pass
         try:
@@ -1331,18 +1431,66 @@ class WallpaperPicker(Gtk.Application):
                                     if hasattr(self, "selected_thumb_box"):
                                         try:
                                             while child := self.selected_thumb_box.get_first_child():
+                                                try:
+                                                    if hasattr(child, "cleanup"):
+                                                        try:
+                                                            child.cleanup()
+                                                        except Exception:
+                                                            pass
+                                                except Exception:
+                                                    pass
                                                 self.selected_thumb_box.remove(child)
                                         except Exception:
                                             pass
 
                                         try:
-                                            thumb = self.make_preview_widget(first.get("preview"), first.get("preview_gif"), 180, 180, autoplay=True)
-                                            self.selected_thumb_box.append(thumb)
-                                            if isinstance(thumb, AnimatedGifImage):
+                                            thumb = self._create_square_picture(first.get("preview"), first.get("preview_gif"), 180)
+                                            try:
                                                 try:
-                                                    thumb.start_animation()
+                                                    thumb.set_content_fit(Gtk.ContentFit.COVER)
                                                 except Exception:
                                                     pass
+                                                thumb.set_size_request(180, 180)
+                                                try:
+                                                    thumb.set_hexpand(False)
+                                                    thumb.set_vexpand(False)
+                                                except Exception:
+                                                    pass
+                                                try:
+                                                    thumb.set_halign(Gtk.Align.START)
+                                                    thumb.set_valign(Gtk.Align.START)
+                                                except Exception:
+                                                    pass
+                                            except Exception:
+                                                pass
+                                            wrapper = Gtk.Box()
+                                            try:
+                                                wrapper.set_size_request(180, 180)
+                                                wrapper.set_hexpand(False)
+                                                wrapper.set_vexpand(False)
+                                                wrapper.set_halign(Gtk.Align.CENTER)
+                                                wrapper.set_valign(Gtk.Align.CENTER)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                wrapper.append(thumb)
+                                            except Exception:
+                                                try:
+                                                    wrapper.add(thumb)
+                                                except Exception:
+                                                    pass
+                                            try:
+                                                inner = thumb
+                                                def _cleanup_inner():
+                                                    try:
+                                                        if hasattr(inner, 'cleanup'):
+                                                            inner.cleanup()
+                                                    except Exception:
+                                                        pass
+                                                wrapper.cleanup = _cleanup_inner
+                                            except Exception:
+                                                pass
+                                            self.selected_thumb_box.append(wrapper)
                                         except Exception:
                                             pass
 
@@ -1365,6 +1513,105 @@ class WallpaperPicker(Gtk.Application):
                     pass
             except Exception:
                 pass
+            # Also scan any user-provided additional MP4 path and include .mp4 files
+            try:
+                st = {}
+                try:
+                    st = self.load_state() if hasattr(self, 'load_state') else {}
+                except Exception:
+                    st = {}
+
+                addp = None
+                try:
+                    if isinstance(st, dict):
+                        addp = st.get("additional_mp4_path") or None
+                except Exception:
+                    addp = None
+
+                if addp:
+                    try:
+                        addp_path = Path(addp).expanduser()
+                        if addp_path.exists() and addp_path.is_dir():
+                            # Walk the folder tree and find mp4 files
+                            for root, dirs, files in os.walk(str(addp_path)):
+                                for fname in files:
+                                    try:
+                                        if not fname.lower().endswith('.mp4'):
+                                            continue
+                                        full = os.path.join(root, fname)
+                                        # Skip duplicates
+                                        skip = False
+                                        for it in items:
+                                            try:
+                                                if os.path.abspath(it.get('video', '')) == os.path.abspath(full):
+                                                    skip = True
+                                                    break
+                                            except Exception:
+                                                continue
+                                        if skip:
+                                            continue
+
+                                        title = os.path.splitext(fname)[0]
+                                        try:
+                                            size = os.path.getsize(full)
+                                        except Exception:
+                                            size = 0
+                                        try:
+                                            sub_date = os.path.getmtime(full)
+                                        except Exception:
+                                            sub_date = 0
+
+                                        preview_path = None
+                                        try:
+                                            # Try to create a small cached thumbnail (first frame) using ffmpeg if available
+                                            if shutil.which("ffmpeg") and hasattr(self, 'state_file'):
+                                                try:
+                                                    thumb_dir = self.state_file.parent / "thumbnails"
+                                                    thumb_dir.mkdir(parents=True, exist_ok=True)
+                                                    # use a stable name based on the file path
+                                                    h = hashlib.sha1(full.encode('utf-8')).hexdigest()
+                                                    candidate = thumb_dir / f"{h}.jpg"
+                                                    if not candidate.exists():
+                                                        cmd = [
+                                                            "ffmpeg",
+                                                            "-ss", "00:00:00",
+                                                            "-i", full,
+                                                            "-frames:v", "1",
+                                                            "-q:v", "2",
+                                                            "-vf", "scale=360:-1",
+                                                            str(candidate),
+                                                            "-y",
+                                                        ]
+                                                        try:
+                                                            subprocess.run(cmd, capture_output=True, timeout=8)
+                                                        except Exception:
+                                                            pass
+                                                    if candidate.exists():
+                                                        preview_path = str(candidate)
+                                                except Exception:
+                                                    preview_path = None
+                                        except Exception:
+                                            preview_path = None
+
+                                        items.append({
+                                            'title': title,
+                                            'video': full,
+                                            'preview': preview_path,
+                                            'preview_gif': None,
+                                            'id': f"mp4:{fname}:{int(sub_date)}",
+                                            'dir': root,
+                                            'size': size,
+                                            'sub_date': sub_date,
+                                        })
+                                    except Exception:
+                                        pass
+                            # Update UI to reflect added mp4 count and refresh grid
+                            GLib.idle_add(self.lbl_status.set_text, f"Found {len(items)} compatible wallpapers (+external mp4s)")
+                            GLib.idle_add(self.show_items, items)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception as e:
             GLib.idle_add(self.lbl_status.set_text, f"Error: {str(e)}")
         finally:
@@ -1382,11 +1629,14 @@ class WallpaperPicker(Gtk.Application):
         while child := self.compat_grid.get_first_child():
             self.compat_grid.remove(child)
 
-    def make_preview_widget(self, preview_static, preview_gif, width, height, autoplay=False):
+    def make_preview_widget(self, preview_static, preview_gif, width, height, autoplay=False, hover=None):
+        # Determine hover behavior: default is to allow hover if not autoplaying
+        if hover is None:
+            hover = not autoplay
         # Prioritize GIF animation if available
         if preview_gif and os.path.isfile(preview_gif):
             try:
-                animated = AnimatedGifImage(preview_gif, width, height, autoplay=autoplay, hover=not autoplay)
+                animated = AnimatedGifImage(preview_gif, width, height, autoplay=autoplay, hover=hover)
                 self.animated_widgets.append(animated)
                 return animated
             except Exception as e:
@@ -1407,6 +1657,60 @@ class WallpaperPicker(Gtk.Application):
         pic = Gtk.Picture()
         pic.set_size_request(width, height)
         return pic
+
+    def _create_square_picture(self, preview_static, preview_gif, size):
+        """Return a Gtk.Picture with a center-cropped square pixbuf of `size`.
+
+        Prefer static preview, fall back to first GIF frame if available. If neither
+        exists, return an empty picture sized to `size`.
+        """
+        try:
+            pb = None
+            if preview_static and os.path.isfile(preview_static):
+                try:
+                    pb = GdkPixbuf.Pixbuf.new_from_file(preview_static)
+                except Exception:
+                    pb = None
+            if pb is None and preview_gif and os.path.isfile(preview_gif):
+                try:
+                    anim = GdkPixbuf.PixbufAnimation.new_from_file(preview_gif)
+                    it = anim.get_iter(None)
+                    pb = it.get_pixbuf()
+                except Exception:
+                    pb = None
+
+            if pb:
+                try:
+                    iw = pb.get_width()
+                    ih = pb.get_height()
+                    # scale up so the smallest dimension >= size, preserving aspect
+                    scale = max(float(size) / iw, float(size) / ih)
+                    new_w = max(1, int(iw * scale))
+                    new_h = max(1, int(ih * scale))
+                    scaled = pb.scale_simple(new_w, new_h, GdkPixbuf.InterpType.BILINEAR)
+                    # center-crop
+                    crop_x = max(0, (new_w - size) // 2)
+                    crop_y = max(0, (new_h - size) // 2)
+                    try:
+                        cropped = scaled.new_subpixbuf(crop_x, crop_y, size, size)
+                    except Exception:
+                        # fallback to scaled resized to size x size
+                        cropped = scaled.scale_simple(size, size, GdkPixbuf.InterpType.BILINEAR)
+                    pic = Gtk.Picture.new_for_pixbuf(cropped)
+                    try:
+                        pic.set_content_fit(Gtk.ContentFit.COVER)
+                    except Exception:
+                        pass
+                    pic.set_size_request(size, size)
+                    return pic
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # fallback empty
+        p = Gtk.Picture()
+        p.set_size_request(size, size)
+        return p
 
     def show_items(self, items):
         try:
@@ -1553,6 +1857,136 @@ class WallpaperPicker(Gtk.Application):
             row = i // cols
             col = i % cols
             self.compat_grid.attach(frame, col, row, 1, 1)
+
+    def show_first_item_metadata_item(self, first):
+        """Display a single item's preview and metadata in the selected area (used after import)."""
+        try:
+            item = first
+            if not item:
+                return False
+
+            try:
+                if hasattr(self, "selected_thumb_box"):
+                    try:
+                        while child := self.selected_thumb_box.get_first_child():
+                            try:
+                                if hasattr(child, "cleanup"):
+                                    try:
+                                        child.cleanup()
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            self.selected_thumb_box.remove(child)
+                    except Exception:
+                        pass
+
+                    try:
+                        thumb = self._create_square_picture(item.get("preview"), item.get("preview_gif"), 180)
+                        try:
+                            try:
+                                thumb.set_content_fit(Gtk.ContentFit.COVER)
+                            except Exception:
+                                pass
+                            thumb.set_size_request(180, 180)
+                            try:
+                                thumb.set_hexpand(False)
+                                thumb.set_vexpand(False)
+                            except Exception:
+                                pass
+                            try:
+                                thumb.set_halign(Gtk.Align.START)
+                                thumb.set_valign(Gtk.Align.START)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                        wrapper = Gtk.Box()
+                        try:
+                            wrapper.set_size_request(180, 180)
+                            wrapper.set_hexpand(False)
+                            wrapper.set_vexpand(False)
+                            wrapper.set_halign(Gtk.Align.CENTER)
+                            wrapper.set_valign(Gtk.Align.CENTER)
+                        except Exception:
+                            pass
+                        try:
+                            wrapper.append(thumb)
+                        except Exception:
+                            try:
+                                wrapper.add(thumb)
+                            except Exception:
+                                pass
+                        try:
+                            inner = thumb
+                            def _cleanup_inner():
+                                try:
+                                    if hasattr(inner, 'cleanup'):
+                                        inner.cleanup()
+                                except Exception:
+                                    pass
+                            wrapper.cleanup = _cleanup_inner
+                        except Exception:
+                            pass
+                        self.selected_thumb_box.append(wrapper)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            try:
+                esc_title = GLib.markup_escape_text(item.get("title", "Selected"))
+                self.lbl_selected_title.set_markup(f"<span weight='bold' size='17000'>{esc_title}</span>")
+            except Exception:
+                try:
+                    self.lbl_selected_title.set_text(item.get("title", "Selected"))
+                except Exception:
+                    pass
+
+            # Populate metadata if available
+            try:
+                vid = item.get("video")
+                if vid:
+                    meta = self.get_video_metadata(vid)
+                    try:
+                        if meta.get("width") and meta.get("height"):
+                            self.lbl_meta_res.set_text(f"Resolution: {meta['width']}×{meta['height']}")
+                        else:
+                            self.lbl_meta_res.set_text("Resolution: —")
+                    except Exception:
+                        pass
+                    try:
+                        if meta.get("duration"):
+                            self.lbl_meta_dur.set_text(f"Duration: {self._format_duration(meta['duration'])}")
+                        else:
+                            self.lbl_meta_dur.set_text("Duration: —")
+                    except Exception:
+                        pass
+                    try:
+                        if meta.get("size") is not None:
+                            self.lbl_meta_size.set_text(f"Size: {self._human_size(meta['size'])}")
+                        else:
+                            self.lbl_meta_size.set_text("Size: —")
+                    except Exception:
+                        pass
+                    try:
+                        if meta.get("created"):
+                            self.lbl_meta_created.set_text(f"Created: {meta['created'].strftime('%Y-%m-%d %H:%M')}")
+                        else:
+                            self.lbl_meta_created.set_text("Created: —")
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, "meta_box"):
+                            self.meta_box.set_visible(True)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        except Exception:
+            pass
+        return False
 
     def clear_incompatible_grid(self):
         while child := self.incompat_grid.get_first_child():
@@ -1818,20 +2252,109 @@ class WallpaperPicker(Gtk.Application):
             if hasattr(self, "selected_thumb_box"):
                 try:
                     while child := self.selected_thumb_box.get_first_child():
+                        try:
+                            if hasattr(child, "cleanup"):
+                                try:
+                                    child.cleanup()
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                         self.selected_thumb_box.remove(child)
                 except Exception:
                     pass
 
                 try:
-                    thumb = self.make_preview_widget(item.get("preview"), item.get("preview_gif"), 180, 180, autoplay=True)
-                    self.selected_thumb_box.append(thumb)
-                except Exception:
-                    pass
-                try:
-                    # If the thumb is an AnimatedGifImage, start its animation immediately
-                    if isinstance(thumb, AnimatedGifImage):
+                    # Show a static preview immediately: prefer static preview image; if only GIF exists,
+                    # render its first frame as a static picture. Store preview_gif path so we can replace
+                    # it with an AnimatedGifImage after successful apply.
+                    preview_static = item.get("preview")
+                    preview_gif = item.get("preview_gif")
+                    self._pending_selected_preview_gif = preview_gif
+
+                    pic = None
+                    try:
+                        if preview_static and os.path.isfile(preview_static):
+                            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(preview_static, 180, 180, True)
+                            pic = Gtk.Picture.new_for_pixbuf(pixbuf)
+                            pic.set_content_fit(Gtk.ContentFit.COVER)
+                            pic.set_size_request(180, 180)
+                        elif preview_gif and os.path.isfile(preview_gif):
+                            try:
+                                anim = GdkPixbuf.PixbufAnimation.new_from_file(preview_gif)
+                                it = anim.get_iter(None)
+                                pb = it.get_pixbuf()
+                                if pb:
+                                    scaled = pb.scale_simple(180, 180, GdkPixbuf.InterpType.BILINEAR)
+                                    pic = Gtk.Picture.new_for_pixbuf(scaled)
+                                    pic.set_content_fit(Gtk.ContentFit.COVER)
+                                    pic.set_size_request(180, 180)
+                            except Exception:
+                                pic = None
+                        if not pic:
+                            pic = Gtk.Picture()
+                            try:
+                                pic.set_content_fit(Gtk.ContentFit.COVER)
+                            except Exception:
+                                pass
+                            pic.set_size_request(180, 180)
+
+                        # Wrap in fixed-size container to enforce square and clipping
+                        wrapper = Gtk.Frame()
                         try:
-                            thumb.start_animation()
+                            wrapper.set_size_request(180, 180)
+                            wrapper.set_hexpand(False)
+                            wrapper.set_vexpand(False)
+                        except Exception:
+                            pass
+                        try:
+                            wrapper.set_child(pic)
+                        except Exception:
+                            try:
+                                wrapper.add(pic)
+                            except Exception:
+                                pass
+                        try:
+                            def _cleanup_inner():
+                                try:
+                                    if hasattr(pic, 'cleanup'):
+                                        pic.cleanup()
+                                except Exception:
+                                    pass
+                            wrapper.cleanup = _cleanup_inner
+                        except Exception:
+                            pass
+                        self.selected_thumb_box.append(wrapper)
+                    except Exception:
+                        try:
+                            pic = Gtk.Picture()
+                            pic.set_size_request(180, 180)
+                            print(f"DEBUG: selected preview used static={preview_static} gif={preview_gif}")
+                            wrapper = Gtk.Frame()
+                            try:
+                                wrapper.set_size_request(180, 180)
+                                wrapper.set_hexpand(False)
+                                wrapper.set_vexpand(False)
+                            except Exception:
+                                pass
+                            try:
+                                wrapper.set_child(pic)
+                            except Exception:
+                                try:
+                                    wrapper.add(pic)
+                                except Exception:
+                                    pass
+                            try:
+                                def _cleanup_inner():
+                                    try:
+                                        if hasattr(pic, 'cleanup'):
+                                            pic.cleanup()
+                                    except Exception:
+                                        pass
+                                wrapper.cleanup = _cleanup_inner
+                            except Exception:
+                                pass
+                            self.selected_thumb_box.append(wrapper)
                         except Exception:
                             pass
                 except Exception:
@@ -2010,6 +2533,78 @@ class WallpaperPicker(Gtk.Application):
                 f"<a href='{folder_uri}'>Open in Explorer</a>"
             )
 
+            # Replace the static preview with an AnimatedGifImage and start it, if we have a preview_gif
+            try:
+                preview_gif = getattr(self, "_pending_selected_preview_gif", None)
+                if preview_gif and os.path.isfile(preview_gif):
+                    try:
+                        # remove existing static child
+                        if hasattr(self, "selected_thumb_box"):
+                            old = self.selected_thumb_box.get_first_child()
+                            try:
+                                if hasattr(old, "cleanup"):
+                                    try:
+                                        old.cleanup()
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            try:
+                                if old is not None:
+                                    self.selected_thumb_box.remove(old)
+                            except Exception:
+                                pass
+
+                            # create animated widget and append/start it
+                            print(f"DEBUG: replacing selected preview with animated gif={preview_gif}")
+                            animated = AnimatedGifImage(preview_gif, 180, 180, autoplay=True, hover=False)
+                            try:
+                                self.animated_widgets.append(animated)
+                            except Exception:
+                                pass
+                            # wrap animated widget in fixed frame to enforce square
+                            aw = Gtk.Frame()
+                            try:
+                                aw.set_size_request(180, 180)
+                                aw.set_hexpand(False)
+                                aw.set_vexpand(False)
+                            except Exception:
+                                pass
+                            try:
+                                aw.set_child(animated)
+                            except Exception:
+                                try:
+                                    aw.add(animated)
+                                except Exception:
+                                    pass
+                            try:
+                                def _cleanup_anim():
+                                    try:
+                                        if hasattr(animated, 'cleanup'):
+                                            animated.cleanup()
+                                    except Exception:
+                                        pass
+                                aw.cleanup = _cleanup_anim
+                            except Exception:
+                                pass
+                            try:
+                                self.selected_thumb_box.append(aw)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                # clear pending reference
+                try:
+                    if hasattr(self, "_pending_selected_preview_gif"):
+                        delattr(self, "_pending_selected_preview_gif")
+                except Exception:
+                    try:
+                        del self._pending_selected_preview_gif
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         except Exception as dbus_err:
             self.lbl_status.set_text("DBus reload failed → restarting Plasma shell…")
             try:
@@ -2141,6 +2736,16 @@ class WallpaperPicker(Gtk.Application):
             except Exception:
                 settings_entry = None
 
+            # Hint inside the path entry (placeholder) so users know what to paste
+            try:
+                if settings_entry:
+                    try:
+                        settings_entry.set_placeholder_text("Paste Steam 'Browse Local Files' path here")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
             # Apply button to copy path back to main entry and save
             def on_apply_clicked(btn):
                 try:
@@ -2207,8 +2812,113 @@ class WallpaperPicker(Gtk.Application):
             settings_box.append(title_lbl)
             settings_box.append(lbl)
             settings_box.append(hbox_entry)
-            if settings_chk:
-                settings_box.append(settings_chk)
+
+            # Additional custom MP4 search path (user can add another folder to scan for mp4s)
+            try:
+                state = {}
+                try:
+                    state = self.load_state() if hasattr(self, 'load_state') else {}
+                except Exception:
+                    state = {}
+
+                add_title = Gtk.Label()
+                try:
+                    add_title.set_markup("<span weight='bold' size='14000'>Additional MP4 Search Path</span>")
+                except Exception:
+                    add_title.set_text("Additional MP4 Search Path")
+                try:
+                    add_title.set_halign(Gtk.Align.START)
+                    add_title.set_margin_top(6)
+                    add_title.set_margin_bottom(2)
+                except Exception:
+                    pass
+
+                try:
+                    custom_entry = Gtk.Entry()
+                    existing = ""
+                    try:
+                        if isinstance(state, dict):
+                            existing = state.get("additional_mp4_path", "") or ""
+                    except Exception:
+                        existing = ""
+                    try:
+                        custom_entry.set_text(existing)
+                    except Exception:
+                        pass
+                    custom_entry.set_placeholder_text("Path to folder containing additional .mp4 files")
+                    custom_entry.set_hexpand(True)
+                except Exception:
+                    custom_entry = None
+
+                def on_add_clicked(btn):
+                    try:
+                        if custom_entry:
+                            newp = custom_entry.get_text().strip()
+                            try:
+                                self.save_state({"additional_mp4_path": newp})
+                            except Exception:
+                                pass
+                            try:
+                                # give feedback in the main status label if available
+                                if hasattr(self, 'lbl_status'):
+                                    self.lbl_status.set_text(f"Saved additional MP4 path: {newp}")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                hbox_custom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                if custom_entry:
+                    hbox_custom.append(custom_entry)
+                add_btn = Gtk.Button(label="Add")
+                add_btn.connect("clicked", on_add_clicked)
+                hbox_custom.append(add_btn)
+
+                settings_box.append(add_title)
+                settings_box.append(hbox_custom)
+            except Exception:
+                pass
+
+            # Place checkbox and report link on the same row, with the link right-aligned
+            try:
+                bottom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                if settings_chk:
+                    bottom_row.append(settings_chk)
+
+                # spacer will push the report button to the right
+                spacer = Gtk.Box()
+                try:
+                    spacer.set_hexpand(True)
+                except Exception:
+                    pass
+                bottom_row.append(spacer)
+
+                try:
+                    report_btn = Gtk.LinkButton.new_with_label(
+                        "https://github.com/bomeers/WE-Video-Picker/issues",
+                        "Report Issue / Contribute"
+                    )
+                    try:
+                        report_btn.set_margin_top(6)
+                    except Exception:
+                        pass
+                    bottom_row.append(report_btn)
+                except Exception:
+                    pass
+
+                settings_box.append(bottom_row)
+            except Exception:
+                # Fallback: append individually
+                if settings_chk:
+                    settings_box.append(settings_chk)
+                try:
+                    report_btn = Gtk.LinkButton.new_with_label(
+                        "https://github.com/bomeers/WE-Video-Picker/issues",
+                        "Report Issue / Contribute"
+                    )
+                    settings_box.append(report_btn)
+                except Exception:
+                    pass
 
             win.set_child(settings_box)
             win.set_default_size(590, 220)

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=WE Video Picker
+Comment=Pick and manage Wallpaper Engine videos
+Exec=we-video-picker
+Terminal=true
+Type=Application
+Icon=org.we.VideoPicker
+Categories=Utility;Video;
