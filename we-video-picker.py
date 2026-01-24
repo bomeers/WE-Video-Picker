@@ -843,40 +843,76 @@ class WallpaperPicker(Gtk.Application):
         incompat_scrolled = Gtk.ScrolledWindow()
         incompat_scrolled.set_vexpand(True)
         try:
-            incompat_overlay = Gtk.Overlay()
-            try:
-                incompat_overlay.set_child(self.incompat_grid)
-            except Exception:
+                incompat_overlay = Gtk.Overlay()
                 try:
-                    incompat_overlay.add(self.incompat_grid)
-                except Exception:
-                    pass
-            try:
-                self.incompat_spinner = RotatingSpinner(48)
-                try:
-                    self.incompat_spinner.set_halign(Gtk.Align.CENTER)
-                    self.incompat_spinner.set_valign(Gtk.Align.CENTER)
-                except Exception:
-                    pass
-                try:
-                    self.incompat_spinner.set_visible(False)
-                except Exception:
-                    pass
-                try:
-                    incompat_overlay.add_overlay(self.incompat_spinner)
+                    incompat_overlay.set_child(self.incompat_grid)
                 except Exception:
                     try:
-                        incompat_overlay.add(self.incompat_spinner)
+                        incompat_overlay.add(self.incompat_grid)
                     except Exception:
                         pass
-            except Exception:
-                self.incompat_spinner = None
-            try:
-                incompat_scrolled.set_child(incompat_overlay)
-            except Exception:
-                box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-                box2.append(incompat_overlay)
-                incompat_scrolled.set_child(box2)
+                try:
+                    self.incompat_spinner = RotatingSpinner(48)
+                    try:
+                        self.incompat_spinner.set_halign(Gtk.Align.CENTER)
+                        self.incompat_spinner.set_valign(Gtk.Align.CENTER)
+                    except Exception:
+                        pass
+                    try:
+                        self.incompat_spinner.set_visible(False)
+                    except Exception:
+                        pass
+                    try:
+                        incompat_overlay.add_overlay(self.incompat_spinner)
+                    except Exception:
+                        try:
+                            incompat_overlay.add(self.incompat_spinner)
+                        except Exception:
+                            pass
+                except Exception:
+                    self.incompat_spinner = None
+                # informational label shown when user opens the Incompatible Wallpapers tab
+                try:
+                    self.incompat_info_label = Gtk.Label()
+                    try:
+                        self.incompat_info_label.set_wrap(True)
+                        self.incompat_info_label.set_justify(Gtk.Justification.LEFT)
+                        self.incompat_info_label.set_markup(
+                            "<b>About incompatible wallpapers</b>\n\n" \
+                            "These items are project folders or scene projects that the KDE plugin 'Smart Video Wallpaper Reborn' cannot use " \
+                            "as a compatible video wallpaper. They require a game engine to " \
+                            "render these scenes - neither wallpaper engine nor the KDE plugin can handle this, \n" \
+                            "Once a better option is available, this section will be updated."
+                        )
+                        self.incompat_info_label.set_margin_bottom(8)
+                        self.incompat_info_label.set_margin_top(6)
+                        self.incompat_info_label.set_visible(False)
+                    except Exception:
+                        pass
+                except Exception:
+                    self.incompat_info_label = None
+
+                # place the info label above the overlay so it scrolls with the grid
+                try:
+                    incompat_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+                    incompat_container.append(self.incompat_info_label if self.incompat_info_label else Gtk.Label())
+                    incompat_container.append(incompat_overlay)
+                    try:
+                        incompat_scrolled.set_child(incompat_container)
+                    except Exception:
+                        try:
+                            box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                            box2.append(incompat_container)
+                            incompat_scrolled.set_child(box2)
+                        except Exception:
+                            pass
+                except Exception:
+                    try:
+                        incompat_scrolled.set_child(incompat_overlay)
+                    except Exception:
+                        box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                        box2.append(incompat_overlay)
+                        incompat_scrolled.set_child(box2)
         except Exception:
             try:
                 incompat_scrolled.set_child(self.incompat_grid)
@@ -917,7 +953,7 @@ class WallpaperPicker(Gtk.Application):
 
                 para_text = (
                     "The results you see are everything you should be able to download and use for now.\n"
-                    "This is just a workaround for the time being as a better solution is not yet available."
+                    "This is just a workaround for the time being - still working on finding a better solution."
                 )
 
                 # Title for the browse tab
@@ -1048,7 +1084,7 @@ class WallpaperPicker(Gtk.Application):
         self.sections_stack = Gtk.Stack()
         try:
             self.sections_stack.add_titled(compat_scrolled, "compatible", "Compatible Wallpapers")
-            self.sections_stack.add_titled(incompat_scrolled, "incompatible", "Incompatible Wallpapers (scene projects)")
+            self.sections_stack.add_titled(incompat_scrolled, "incompatible", "Incompatible Wallpapers")
             # Add a third tab for browsing wallpapers (workshop / online)
             try:
                 self.sections_stack.add_titled(workshop_scrolled, "browse", "Browse Wallpapers")
@@ -1081,31 +1117,42 @@ class WallpaperPicker(Gtk.Application):
 
         # Connect to stack visibility changes to lazily load incompatible items
         try:
-            def _on_stack_visible(stack, pspec):
-                try:
-                    vis = stack.get_visible_child()
-                    if vis is incompat_scrolled:
-                        if getattr(self, "incompat_loaded", False):
-                            return
-                        base = getattr(self, "last_workshop_dir", None)
-                        if not base:
-                            GLib.idle_add(self.lbl_status.set_text, "Please import wallpapers first to scan incompatible items")
-                            return
-                        self.incompat_loaded = True
-                        # start incompat spinner while scanning
+                def _on_stack_visible(stack, pspec):
+                    try:
+                        vis = stack.get_visible_child()
+                        # show the informational paragraph when the incompatible tab becomes visible
                         try:
-                            if getattr(self, 'incompat_spinner', None):
-                                try:
-                                    GLib.idle_add(self._start_spinner, 'incompat_spinner')
-                                except Exception:
-                                    pass
+                            if vis is incompat_scrolled:
+                                if getattr(self, 'incompat_info_label', None):
+                                    GLib.idle_add(self.incompat_info_label.set_visible, True)
+                            else:
+                                if getattr(self, 'incompat_info_label', None):
+                                    GLib.idle_add(self.incompat_info_label.set_visible, False)
                         except Exception:
                             pass
-                        threading.Thread(target=self.scan_incompatible, args=(base,), daemon=True).start()
-                except Exception:
-                    pass
 
-            self.sections_stack.connect("notify::visible-child", _on_stack_visible)
+                        if vis is incompat_scrolled:
+                            if getattr(self, "incompat_loaded", False):
+                                return
+                            base = getattr(self, "last_workshop_dir", None)
+                            if not base:
+                                GLib.idle_add(self.lbl_status.set_text, "Please import wallpapers first to scan incompatible items")
+                                return
+                            self.incompat_loaded = True
+                            # start incompat spinner while scanning
+                            try:
+                                if getattr(self, 'incompat_spinner', None):
+                                    try:
+                                        GLib.idle_add(self._start_spinner, 'incompat_spinner')
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            threading.Thread(target=self.scan_incompatible, args=(base,), daemon=True).start()
+                    except Exception:
+                        pass
+
+                self.sections_stack.connect("notify::visible-child", _on_stack_visible)
         except Exception:
             pass
 
@@ -1153,6 +1200,22 @@ class WallpaperPicker(Gtk.Application):
             .input-error {
                 border: 1px solid #ff4d4d;
                 border-radius: 4px;
+            }
+            /* Remove / delete button specific styling: white icon on a toned red background */
+            .mp4-remove-button {
+                background-color: rgba(255,77,77,0.12);
+                border: 1px solid rgba(255,77,77,0.18);
+                border-radius: 6px;
+                padding: 4px;
+                color: #ffffff;
+                opacity: 1.0;
+            }
+            .mp4-remove-button image {
+                color: #ffffff;
+                opacity: 1.0;
+            }
+            .mp4-remove-button:hover {
+                background-color: rgba(255,77,77,0.18);
             }
             """
             provider = Gtk.CssProvider()
@@ -2484,6 +2547,20 @@ class WallpaperPicker(Gtk.Application):
 
             GLib.idle_add(self.show_incompatible_items, items)
             GLib.idle_add(self.lbl_status.set_text, f"Found {len(items)} incompatible wallpapers")
+            # Clear the "Found X" status message after 3 seconds and show "Open in Explorer"
+            def _clear_incompat_found():
+                try:
+                    if hasattr(self, "lbl_status"):
+                        try:
+                            folder_uri = "file://" + quote(base_path)
+                            self.lbl_status.set_markup(f"<a href='{folder_uri}'>Open in Explorer</a>")
+                        except Exception:
+                            self.lbl_status.set_text("")
+                except Exception:
+                    pass
+                return False
+
+            GLib.timeout_add(3000, _clear_incompat_found)
             # stop/hide incompatible spinner
             try:
                 if getattr(self, 'incompat_spinner', None):
@@ -3266,6 +3343,53 @@ class WallpaperPicker(Gtk.Application):
                             pass
 
                         # If an initial non-empty path is provided, show a Delete button
+                        def make_open_button(entry_widget):
+                            def _on_open_clicked(btn):
+                                try:
+                                    txt = ""
+                                    try:
+                                        txt = entry_widget.get_text().strip()
+                                    except Exception:
+                                        txt = ""
+                                    if not txt:
+                                        return
+                                    p = Path(txt).expanduser()
+                                    # attempt to open folder or file in the user's default file manager
+                                    if p.exists():
+                                        uri = "file://" + str(p)
+                                    else:
+                                        # try parent folder
+                                        uri = "file://" + str(p.parent)
+                                    try:
+                                        Gio.AppInfo.launch_default_for_uri(uri, None)
+                                    except Exception:
+                                        try:
+                                            subprocess.Popen(["xdg-open", str(p if p.exists() else p.parent)])
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    pass
+                            btn = Gtk.Button()
+                            try:
+                                img = Gtk.Image.new_from_icon_name("folder-open-symbolic")
+                                img.set_valign(Gtk.Align.CENTER)
+                                img.set_halign(Gtk.Align.CENTER)
+                                btn.set_child(img)
+                            except Exception:
+                                try:
+                                    btn.set_label("Open")
+                                except Exception:
+                                    pass
+                            try:
+                                btn.set_tooltip_text("Open folder")
+                            except Exception:
+                                pass
+                            try:
+                                btn.connect("clicked", _on_open_clicked)
+                            except Exception:
+                                pass
+                            return btn
+
                         def make_delete_button(path_val, target_row):
                             def _on_delete_clicked(btn):
                                 try:
@@ -3290,7 +3414,25 @@ class WallpaperPicker(Gtk.Application):
                                         pass
                                 except Exception:
                                     pass
-                            btn = Gtk.Button(label="Delete")
+                            btn = Gtk.Button()
+                            try:
+                                img = Gtk.Image.new_from_icon_name("list-remove-symbolic")
+                                img.set_valign(Gtk.Align.CENTER)
+                                img.set_halign(Gtk.Align.CENTER)
+                                btn.set_child(img)
+                            except Exception:
+                                try:
+                                    btn.set_label("-")
+                                except Exception:
+                                    pass
+                            try:
+                                btn.set_tooltip_text("Remove path")
+                            except Exception:
+                                pass
+                            try:
+                                btn.get_style_context().add_class("mp4-remove-button")
+                            except Exception:
+                                pass
                             btn.connect("clicked", _on_delete_clicked)
                             return btn
 
@@ -3352,49 +3494,118 @@ class WallpaperPicker(Gtk.Application):
                                     _save_path_to_state(txt)
                                 except Exception:
                                     pass
-                                # convert this row's Add button into a Delete button
+                                # convert this row's Add button into an Open + Delete button row
                                 try:
+                                    # explicitly remove the original Add button if it exists
+                                    try:
+                                        if 'add_btn' in locals() and add_btn is not None:
+                                            try:
+                                                row.remove(add_btn)
+                                            except Exception:
+                                                try:
+                                                    add_btn.set_visible(False)
+                                                except Exception:
+                                                    pass
+                                            try:
+                                                add_btn.destroy()
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
                                     # make entry non-editable/greyed out
                                     try:
                                         entry.set_editable(False)
                                         entry.set_sensitive(False)
                                     except Exception:
                                         pass
-                                    # remove the Add button (if present) and append a Delete button
+
+                                    # remove any existing children from the row, we'll rebuild it
                                     try:
-                                        # prefer to remove the specific add_btn if available
-                                        try:
-                                            if 'add_btn' in locals() and add_btn is not None:
+                                        for child in list(row.get_children()):
+                                            try:
+                                                row.remove(child)
+                                            except Exception:
                                                 try:
-                                                    row.remove(add_btn)
+                                                    child.set_visible(False)
                                                 except Exception:
-                                                    try:
-                                                        add_btn.set_visible(False)
-                                                    except Exception:
-                                                        pass
+                                                    pass
+                                    except Exception:
+                                        pass
+
+                                    # rebuild the row: entry + open button + delete button
+                                    try:
+                                        try:
+                                            row.append(entry)
+                                        except Exception:
+                                            try:
+                                                row.add(entry)
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+
+                                    try:
+                                        open_btn = make_open_button(entry)
+                                        try:
+                                            open_btn.set_visible(True)
+                                            open_btn.set_sensitive(True)
                                         except Exception:
                                             pass
-                                        # fallback: remove any remaining button children
                                         try:
-                                            for child in list(row.get_children()):
-                                                try:
-                                                    if isinstance(child, Gtk.Button):
+                                            row.append(open_btn)
+                                        except Exception:
+                                            try:
+                                                row.add(open_btn)
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+
+                                    try:
+                                        del_btn = make_delete_button(txt, row)
+                                        try:
+                                            del_btn.set_visible(True)
+                                            del_btn.set_sensitive(True)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            row.append(del_btn)
+                                        except Exception:
+                                            try:
+                                                row.add(del_btn)
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                                    # ensure any leftover Add buttons are removed from this row
+                                    try:
+                                        for child in list(row.get_children()):
+                                            try:
+                                                if isinstance(child, Gtk.Button):
+                                                    try:
+                                                        tt = child.get_tooltip_text()
+                                                    except Exception:
+                                                        tt = None
+                                                    try:
+                                                        lab = child.get_label()
+                                                    except Exception:
+                                                        lab = None
+                                                    if tt == 'Add path' or lab == '+' or lab == 'Add':
                                                         try:
                                                             row.remove(child)
+                                                            try:
+                                                                child.destroy()
+                                                            except Exception:
+                                                                pass
                                                         except Exception:
                                                             try:
                                                                 child.set_visible(False)
                                                             except Exception:
                                                                 pass
-                                                except Exception:
-                                                    pass
-                                        except Exception:
-                                            pass
+                                            except Exception:
+                                                pass
                                     except Exception:
                                         pass
-                                    # create delete button bound to this txt and this row
-                                    del_btn = make_delete_button(txt, row)
-                                    row.append(del_btn)
                                 except Exception:
                                     pass
                                 # append a new blank row below this one
@@ -3406,16 +3617,42 @@ class WallpaperPicker(Gtk.Application):
                             except Exception:
                                 pass
 
-                        add_btn = Gtk.Button(label="Add")
+                        add_btn = Gtk.Button()
+                        try:
+                            img = Gtk.Image.new_from_icon_name("list-add-symbolic")
+                            img.set_valign(Gtk.Align.CENTER)
+                            img.set_halign(Gtk.Align.CENTER)
+                            add_btn.set_child(img)
+                        except Exception:
+                            try:
+                                add_btn.set_label("+")
+                            except Exception:
+                                pass
+                        try:
+                            add_btn.set_tooltip_text("Add path")
+                        except Exception:
+                            pass
                         add_btn.connect("clicked", _on_add_clicked)
                         row.append(entry)
                         # if initial text exists, create a Delete button instead
                         if initial_text:
-                            try:
-                                del_btn = make_delete_button(initial_text, row)
-                                row.append(del_btn)
-                            except Exception:
-                                row.append(add_btn)
+                                try:
+                                    open_btn = make_open_button(entry)
+                                    try:
+                                        open_btn.set_visible(True)
+                                        open_btn.set_sensitive(True)
+                                    except Exception:
+                                        pass
+                                    del_btn = make_delete_button(initial_text, row)
+                                    try:
+                                        del_btn.set_visible(True)
+                                        del_btn.set_sensitive(True)
+                                    except Exception:
+                                        pass
+                                    row.append(open_btn)
+                                    row.append(del_btn)
+                                except Exception:
+                                    row.append(add_btn)
                         else:
                             row.append(add_btn)
                         return row
