@@ -1,5 +1,5 @@
 # WE Video Picker
-### Middleman software to connect wallpaper engine and KDE plugin "Smart Video Wallpaper Reborn"
+### Open Source Middleman software to connect wallpaper engine and KDE plugin "Smart Video Wallpaper Reborn"
 
 ## Quickstart
 Run the following in a terminal

@@ -4,7 +4,7 @@
 # | | | |   __|  |  |  | | . | -_| . |  |   __| |  _| '_| -_|  _|
 # |_____|_____|   \___/|_|___|___|___|  |__|  |_|___|_,_|___|_|  
 # --------------------------------------------------------------
-# Middleman Software to connect Wallpaper Engine to KDE Plugin "Smart Video Wallpaper Reborn"
+# Open Source Middleman Software to connect Wallpaper Engine to KDE Plugin "Smart Video Wallpaper Reborn"
 # Author: Bo Meers
 # Github: https://github.com/bomeers/WE-Video-Picker
 #
