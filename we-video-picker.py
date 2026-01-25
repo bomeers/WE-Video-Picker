@@ -1,8 +1,24 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3                                                        
+#  _ _ _ _____    _____ _   _            _____ _     _           
+# | | | |   __|  |  |  |_|_| |___ ___   |  _  |_|___| |_ ___ ___ 
+# | | | |   __|  |  |  | | . | -_| . |  |   __| |  _| '_| -_|  _|
+# |_____|_____|   \___/|_|___|___|___|  |__|  |_|___|_,_|___|_|  
+# --------------------------------------------------------------
+# Middleman Software to connect Wallpaper Engine to KDE Plugin "Smart Video Wallpaper Reborn"
+# Author: Bo Meers
+# Github: https://github.com/bomeers/WE-Video-Picker
+#
+# Full Disclosure: This software was made with the assistance of AI, but has been reviewed and modified by the author to make the UI/UX perfect.
+# It Edits the ~/.config/plasma-org.kde.plasma.desktop-appletsrc file to set video wallpapers using the KDE plugin.
+# It also Creates ~/.config/we-video-picker.json to store user preferences.
+#
+# Use at your own risk. Always back up your configuration files before using such tools.
+# --------------------------------------------------------------
+                                                               
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Gio, GLib, Gdk, GdkPixbuf, Pango
+from gi.repository import Gtk, Gio, GLib, GdkPixbuf, Pango
 import cairo
 import math
 import json
@@ -21,30 +37,10 @@ COMMON_WP_INSTALLS = [
     Path.home() / ".steam/steam/steamapps/common/wallpaper_engine",
     Path.home() / ".var/app/com.valvesoftware.Steam/.steam/steam/steamapps/common/wallpaper_engine",
 ]
-CONFIG_FILE = "plasma-org.kde.plasma.desktop-appletsrc"
-CONFIG_GROUP_PREFIX = "Wallpaper-luisbocanegra-smart-video-wallpaper-reborn"
-KEY_NAME = "VideoUrls"
 # ===========================================
 
+# Check the if KDE plugin "Smart Video Wallpaper Reborn" is installed
 def is_kde_plugin_installed(plugin_id: str) -> bool:
-    """
-    Check if a KDE Plasma plugin/wallpaper is installed.
-    
-    Checks common installation locations:
-    - ~/.local/share/plasma/wallpapers/
-    - ~/.local/share/kpackage/wallpapers/
-    - /usr/share/plasma/wallpapers/
-    - /usr/share/kpackage/wallpapers/
-    - /usr/local/share/plasma/wallpapers/
-    - /usr/local/share/kpackage/wallpapers/
-    
-    Args:
-        plugin_id: The plugin ID (e.g., "luisbocanegra.smart.video.wallpaper.reborn")
-    
-    Returns:
-        True if the plugin is found, False otherwise
-    """
-    # Try exact match with dots converted to dashes
     plugin_dir_name = plugin_id.replace(".", "-")
     
     base_locations = [
@@ -62,7 +58,6 @@ def is_kde_plugin_installed(plugin_id: str) -> bool:
         if exact_path.exists() and exact_path.is_dir():
             return True
         
-        # Also check if directory exists with the plugin_id as-is (with dots)
         alt_path = base_dir / plugin_id
         if alt_path.exists() and alt_path.is_dir():
             return True
@@ -81,18 +76,9 @@ def is_kde_plugin_installed(plugin_id: str) -> bool:
     
     return False
 
+# TODO: Check if wallpaper engine is installed and if not, show error message box in the grid at the top.
+
 def get_current_video_wallpaper_data():
-    """
-    Read the plasma config file to extract the current video wallpaper data.
-    
-    Checks ~/.config/plasma-org.kde.plasma.desktop-appletsrc for VideoUrls,
-    extracts the file path, and finds the project title and preview files
-    in the parent directory.
-    
-    Returns:
-        dict: Contains 'title', 'preview', 'preview_gif', 'video' keys if found,
-              or empty dict if not found or on error.
-    """
     try:
         config_path = Path.home() / ".config/plasma-org.kde.plasma.desktop-appletsrc"
         if not config_path.exists():
@@ -110,7 +96,7 @@ def get_current_video_wallpaper_data():
             if line.startswith("["):
                 current_group = line
             
-            # Look for VideoUrls in wallpaper plugin sections
+            # Look for VideoUrls in wallpaper engine files
             if "VideoUrls=" in line and current_group and "luisbocanegra" in current_group.lower():
                 # Extract the video URL
                 video_url = line.split("VideoUrls=", 1)[1].strip()
@@ -166,10 +152,6 @@ def get_current_video_wallpaper_data():
         return {}
 
 class AnimatedGifImage(Gtk.Picture):
-    """Custom widget that animates GIF files using GdkPixbuf animation iterator
-
-    Supports optional autoplay (start immediately) and optional hover control.
-    """
 
     def __init__(self, gif_path, width, height, autoplay=False, hover=True):
         super().__init__()
@@ -226,7 +208,6 @@ class AnimatedGifImage(Gtk.Picture):
         if self.timeout_id:
             GLib.source_remove(self.timeout_id)
             self.timeout_id = None
-        # Reset to first frame
         try:
             self.iter = self.animation.get_iter(None)
             pixbuf = self.iter.get_pixbuf()
@@ -238,7 +219,6 @@ class AnimatedGifImage(Gtk.Picture):
     
     def _update_frame(self):
         try:
-            # Advance to next frame
             self.iter.advance(None)
             pixbuf = self.iter.get_pixbuf()
             
@@ -246,9 +226,9 @@ class AnimatedGifImage(Gtk.Picture):
                 scaled = pixbuf.scale_simple(self.width, self.height, GdkPixbuf.InterpType.BILINEAR)
                 self.set_pixbuf(scaled)
             
-            return self.is_animating  # Continue animation only if still hovering
+            return self.is_animating
         except Exception:
-            return False  # Stop animation on error
+            return False
     
     def cleanup(self):
         """Stop animation timer"""
@@ -279,11 +259,6 @@ class AnimatedGifImage(Gtk.Picture):
 
 
 class RotatingSpinner(Gtk.DrawingArea):
-    """Simple rotating spinner drawn with Cairo on a Gtk.DrawingArea.
-
-    Call `start()` to begin rotating and `stop()` to stop. Rotation runs
-    on the GTK main loop via GLib.timeout_add.
-    """
     def __init__(self, size=48):
         super().__init__()
         try:
@@ -382,10 +357,11 @@ class RotatingSpinner(Gtk.DrawingArea):
             pass
 
 class WallpaperPicker(Gtk.Application):
+    # Trying to add a spinner while loading
     def __init__(self):
         super().__init__(application_id="com.example.WEVideoPicker")
         self.connect("activate", self.on_activate)
-        self.animated_widgets = []  # Track animated widgets for cleanup
+        self.animated_widgets = []
 
     def load_state(self):
         try:
@@ -420,7 +396,6 @@ class WallpaperPicker(Gtk.Application):
         except Exception:
             pass
         try:
-            # make window use app-bg so its background matches the grid
             try:
                 win.get_style_context().add_class("app-bg")
             except Exception:
@@ -435,7 +410,6 @@ class WallpaperPicker(Gtk.Application):
         vbox.set_margin_bottom(16)
         win.set_child(vbox)
 
-        # Path entry row (separate row under the header)
         hbox_entry = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
 
         self.entry_path = Gtk.Entry()
@@ -469,6 +443,7 @@ class WallpaperPicker(Gtk.Application):
         self.entry_path.set_text(initial)
         self.entry_path.set_hexpand(True)
         self.entry_path.set_placeholder_text("Path to Wallpaper Engine install (..../steamapps/common/wallpaper_engine)")
+
         # Top-left status area (selected title above status/link)
         try:
             # Selected title and thumbnail area
@@ -498,7 +473,6 @@ class WallpaperPicker(Gtk.Application):
             except Exception:
                 pass
             try:
-                # xalign controls text justification inside the label (0.0 = left)
                 self.lbl_status.set_xalign(0.0)
             except Exception:
                 pass
@@ -506,7 +480,6 @@ class WallpaperPicker(Gtk.Application):
             # Thumbnail to the left of the title
             try:
                 self.selected_thumb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-                # small padding to the right of the preview image
                 try:
                     self.selected_thumb_box.set_margin_end(8)
                     try:
@@ -531,6 +504,7 @@ class WallpaperPicker(Gtk.Application):
 
             title_stack = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
             title_stack.append(self.lbl_selected_title)
+
             # metadata labels (resolution, duration, size, created) stacked vertically
             try:
                 self.meta_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -601,7 +575,6 @@ class WallpaperPicker(Gtk.Application):
                 except Exception:
                     pass
                 try:
-                    # keep a reference so we can hide it after import
                     self.btn_quick_import = btn_quick_import
                 except Exception:
                     pass
@@ -622,7 +595,6 @@ class WallpaperPicker(Gtk.Application):
         header.set_valign(Gtk.Align.START)
         header.set_hexpand(True)
 
-        # Append the earlier-created status_top (which includes thumbnail and title)
         try:
             header.append(status_top)
         except Exception:
@@ -635,7 +607,6 @@ class WallpaperPicker(Gtk.Application):
             except Exception:
                 pass
 
-        # spacer pushes controls to the right of the header
         try:
             header_spacer = Gtk.Box()
             header_spacer.set_hexpand(True)
@@ -647,7 +618,6 @@ class WallpaperPicker(Gtk.Application):
         try:
             controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
             controls.set_valign(Gtk.Align.START)
-            # avoid taking extra vertical space so tabs stay close to the header
             try:
                 controls.set_vexpand(False)
             except Exception:
@@ -656,7 +626,6 @@ class WallpaperPicker(Gtk.Application):
                 controls.set_hexpand(False)
             except Exception:
                 pass
-            # mark this controls box so it can be targeted by CSS/layout
             try:
                 controls.add_css_class("sort-container")
             except Exception:
@@ -749,8 +718,6 @@ class WallpaperPicker(Gtk.Application):
         self.status_area = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         vbox.append(self.status_area)
 
-        # Sorting dropdown moved to top row
-
         # Auto-trigger import on startup
         try:
             try:
@@ -796,6 +763,7 @@ class WallpaperPicker(Gtk.Application):
         # Create scrollable children for each tab
         compat_scrolled = Gtk.ScrolledWindow()
         compat_scrolled.set_vexpand(True)
+
         # Create an overlay so the spinner can sit centered over the grid without moving layout
         try:
             compat_overlay = Gtk.Overlay()
@@ -983,7 +951,6 @@ class WallpaperPicker(Gtk.Application):
                 except Exception:
                     pass
 
-                # Numbered list: left-justified within a constrained width, but centered as a block
                 list_lbl = Gtk.Label(label=list_text)
                 try:
                     list_lbl.set_wrap(True)
@@ -999,7 +966,6 @@ class WallpaperPicker(Gtk.Application):
                 except Exception:
                     pass
 
-                # Paragraph: centered and wrapped
                 para_lbl = Gtk.Label(label=para_text)
                 try:
                     para_lbl.set_wrap(True)
@@ -1014,7 +980,6 @@ class WallpaperPicker(Gtk.Application):
                     para_lbl.set_halign(Gtk.Align.CENTER)
                 except Exception:
                     pass
-                # add extra top padding so the numbered list sits further down
                 try:
                     list_lbl.set_margin_top(50)
                     list_lbl.set_margin_bottom(6)
@@ -1031,6 +996,7 @@ class WallpaperPicker(Gtk.Application):
             except Exception:
                 pass
 
+            # Open Wallpaper Engine button
             try:
                 open_btn = Gtk.Button(label="Open Wallpaper Engine")
                 open_btn.set_tooltip_text("Launch Wallpaper Engine via Steam")
@@ -1040,9 +1006,7 @@ class WallpaperPicker(Gtk.Application):
             except Exception:
                 pass
 
-            # then append the workshop grid below (with its own spinner viewport)
             try:
-                # workshop overlay wrapper with spinner (centred overlay)
                 workshop_overlay = Gtk.Overlay()
                 try:
                     workshop_overlay.set_child(self.workshop_grid)
@@ -1080,19 +1044,17 @@ class WallpaperPicker(Gtk.Application):
             wb.append(self.workshop_grid)
             workshop_scrolled.set_child(wb)
 
-        # Stack + StackSwitcher to act as static tabs
+        # Tabs
         self.sections_stack = Gtk.Stack()
         try:
             self.sections_stack.add_titled(compat_scrolled, "compatible", "Compatible Wallpapers")
             self.sections_stack.add_titled(incompat_scrolled, "incompatible", "Incompatible Wallpapers")
-            # Add a third tab for browsing wallpapers (workshop / online)
+            # Wrapping in try in case workshop connectivity is implemented
             try:
                 self.sections_stack.add_titled(workshop_scrolled, "browse", "Browse Wallpapers")
             except Exception:
-                # ignore if workshop tab cannot be added for some reason
                 pass
         except Exception:
-            # fallback if add_titled not available
             self.sections_stack.add_child(compat_scrolled)
             self.sections_stack.add_child(incompat_scrolled)
             try:
@@ -1117,40 +1079,40 @@ class WallpaperPicker(Gtk.Application):
 
         # Connect to stack visibility changes to lazily load incompatible items
         try:
-                def _on_stack_visible(stack, pspec):
+            def _on_stack_visible(stack, pspec):
+                try:
+                    vis = stack.get_visible_child()
+                    # show the informational paragraph when the incompatible tab becomes visible
                     try:
-                        vis = stack.get_visible_child()
-                        # show the informational paragraph when the incompatible tab becomes visible
-                        try:
-                            if vis is incompat_scrolled:
-                                if getattr(self, 'incompat_info_label', None):
-                                    GLib.idle_add(self.incompat_info_label.set_visible, True)
-                            else:
-                                if getattr(self, 'incompat_info_label', None):
-                                    GLib.idle_add(self.incompat_info_label.set_visible, False)
-                        except Exception:
-                            pass
-
                         if vis is incompat_scrolled:
-                            if getattr(self, "incompat_loaded", False):
-                                return
-                            base = getattr(self, "last_workshop_dir", None)
-                            if not base:
-                                GLib.idle_add(self.lbl_status.set_text, "Please import wallpapers first to scan incompatible items")
-                                return
-                            self.incompat_loaded = True
-                            # start incompat spinner while scanning
-                            try:
-                                if getattr(self, 'incompat_spinner', None):
-                                    try:
-                                        GLib.idle_add(self._start_spinner, 'incompat_spinner')
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                pass
-                            threading.Thread(target=self.scan_incompatible, args=(base,), daemon=True).start()
+                            if getattr(self, 'incompat_info_label', None):
+                                GLib.idle_add(self.incompat_info_label.set_visible, True)
+                        else:
+                            if getattr(self, 'incompat_info_label', None):
+                                GLib.idle_add(self.incompat_info_label.set_visible, False)
                     except Exception:
                         pass
+
+                    if vis is incompat_scrolled:
+                        if getattr(self, "incompat_loaded", False):
+                            return
+                        base = getattr(self, "last_workshop_dir", None)
+                        if not base:
+                            GLib.idle_add(self.lbl_status.set_text, "Please import wallpapers first to scan incompatible items")
+                            return
+                        self.incompat_loaded = True
+                        # start incompat spinner while scanning
+                        try:
+                            if getattr(self, 'incompat_spinner', None):
+                                try:
+                                    GLib.idle_add(self._start_spinner, 'incompat_spinner')
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        threading.Thread(target=self.scan_incompatible, args=(base,), daemon=True).start()
+                except Exception:
+                    pass
 
                 self.sections_stack.connect("notify::visible-child", _on_stack_visible)
         except Exception:
@@ -1169,7 +1131,6 @@ class WallpaperPicker(Gtk.Application):
                 border-radius: 6px;
                 padding: 8px;
             }
-            /* ensure card buttons have no padding and no outline offset */
             .card > button,
             .card button {
                 padding: 0;
@@ -1201,7 +1162,6 @@ class WallpaperPicker(Gtk.Application):
                 border: 1px solid #ff4d4d;
                 border-radius: 4px;
             }
-            /* Remove / delete button specific styling: white icon on a toned red background */
             .mp4-remove-button {
                 background-color: rgba(255,77,77,0.12);
                 border: 1px solid rgba(255,77,77,0.18);
@@ -1224,7 +1184,7 @@ class WallpaperPicker(Gtk.Application):
         except Exception:
             pass
 
-        # Helper methods to start/stop spinners safely on the main loop
+        # Spinner start/stop helpers
         def _start_spinner_by_name(name):
             try:
                 sp = getattr(self, name, None)
@@ -1251,7 +1211,6 @@ class WallpaperPicker(Gtk.Application):
                 pass
             return False
 
-        # attach helpers to self so other methods can GLib.idle_add them
         try:
             self._start_spinner = lambda name: _start_spinner_by_name(name)
             self._stop_spinner = lambda name: _stop_spinner_by_name(name)
@@ -1845,7 +1804,7 @@ class WallpaperPicker(Gtk.Application):
                     pass
             except Exception:
                 pass
-            # Also scan any user-provided additional MP4 path and include .mp4 files
+            # Additional MP4 paths
             try:
                 st = {}
                 try:
@@ -1853,7 +1812,7 @@ class WallpaperPicker(Gtk.Application):
                 except Exception:
                     st = {}
 
-                # support multiple additional MP4 search paths (migrates old single-value key)
+                # support multiple additional MP4 search paths
                 try:
                     paths = []
                     try:
@@ -1861,7 +1820,6 @@ class WallpaperPicker(Gtk.Application):
                             paths = list(st.get('additional_mp4_paths') or [])
                     except Exception:
                         paths = []
-                    # migrate old single-value key if present
                     try:
                         if not paths and isinstance(st, dict):
                             old = st.get('additional_mp4_path')
@@ -1979,8 +1937,8 @@ class WallpaperPicker(Gtk.Application):
                 pass
             GLib.idle_add(button.set_sensitive, True)
 
+    # Clean up animated widgets before clearing
     def clear_grid(self):
-        # Clean up animated widgets before clearing
         for widget in self.animated_widgets:
             try:
                 widget.cleanup()
@@ -1992,10 +1950,8 @@ class WallpaperPicker(Gtk.Application):
             self.compat_grid.remove(child)
 
     def make_preview_widget(self, preview_static, preview_gif, width, height, autoplay=False, hover=None):
-        # Determine hover behavior: default is to allow hover if not autoplaying
         if hover is None:
             hover = not autoplay
-        # Prioritize GIF animation if available
         if preview_gif and os.path.isfile(preview_gif):
             try:
                 animated = AnimatedGifImage(preview_gif, width, height, autoplay=autoplay, hover=hover)
@@ -2004,7 +1960,6 @@ class WallpaperPicker(Gtk.Application):
             except Exception as e:
                 print(f"Failed to create animated GIF: {e}")
 
-        # Fallback to static preview
         if preview_static and os.path.isfile(preview_static):
             try:
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(preview_static, width, height, True)
@@ -2015,7 +1970,6 @@ class WallpaperPicker(Gtk.Application):
             except Exception as e:
                 print(f"Failed to load static preview: {e}")
 
-        # Empty placeholder
         pic = Gtk.Picture()
         pic.set_size_request(width, height)
         return pic
@@ -2050,7 +2004,6 @@ class WallpaperPicker(Gtk.Application):
                     new_w = max(1, int(iw * scale))
                     new_h = max(1, int(ih * scale))
                     scaled = pb.scale_simple(new_w, new_h, GdkPixbuf.InterpType.BILINEAR)
-                    # center-crop
                     crop_x = max(0, (new_w - size) // 2)
                     crop_y = max(0, (new_h - size) // 2)
                     try:
@@ -2069,13 +2022,12 @@ class WallpaperPicker(Gtk.Application):
                     pass
         except Exception:
             pass
-        # fallback empty
         p = Gtk.Picture()
         p.set_size_request(size, size)
         return p
 
+    # stop/hide any loading spinners now that items are available
     def show_items(self, items):
-        # stop/hide any loading spinners now that items are available
         try:
             if getattr(self, 'compat_spinner', None):
                 try:
@@ -2135,7 +2087,6 @@ class WallpaperPicker(Gtk.Application):
         CARD_WIDTH = 180
         CARD_HEIGHT = 180
         IMG_HEIGHT = (CARD_HEIGHT * 2) // 3
-        LABEL_HEIGHT = CARD_HEIGHT - IMG_HEIGHT
         
         for i, item in enumerate(items):
             frame = Gtk.Frame()
@@ -2238,8 +2189,8 @@ class WallpaperPicker(Gtk.Application):
             col = i % cols
             self.compat_grid.attach(frame, col, row, 1, 1)
 
+    # Display a single item's preview and metadata in the selected area (used after import).
     def show_first_item_metadata_item(self, first):
-        """Display a single item's preview and metadata in the selected area (used after import)."""
         try:
             item = first
             if not item:
@@ -2397,7 +2348,6 @@ class WallpaperPicker(Gtk.Application):
         CARD_WIDTH = 180
         CARD_HEIGHT = 180
         IMG_HEIGHT = (CARD_HEIGHT * 2) // 3
-        LABEL_HEIGHT = CARD_HEIGHT - IMG_HEIGHT
         
         for i, item in enumerate(items):
             frame = Gtk.Frame()
@@ -2440,7 +2390,8 @@ class WallpaperPicker(Gtk.Application):
                 img.set_valign(Gtk.Align.FILL)
             except Exception:
                 pass
-            # overlay the title on top of the image for incompatible items too
+
+            # overlay the title on top of the image
             overlay = Gtk.Overlay()
             try:
                 overlay.set_size_request(CARD_WIDTH, IMG_HEIGHT)
@@ -2502,6 +2453,7 @@ class WallpaperPicker(Gtk.Application):
             col = i % cols
             self.incompat_grid.attach(frame, col, row, 1, 1)
 
+    # Scan a directory for incompatible wallpapers (scene projects)
     def scan_incompatible(self, base_path):
         GLib.idle_add(self.clear_incompatible_grid)
         items = []
@@ -2642,6 +2594,7 @@ class WallpaperPicker(Gtk.Application):
             pass
         return meta
 
+    # Handle wallpaper selection
     def on_wallpaper_clicked(self, button):
         item = button.item_data
         video_path = item["video"]
@@ -2850,6 +2803,7 @@ class WallpaperPicker(Gtk.Application):
                     updated_lines = []
                     in_containment = False
                     
+                    # Update containments (virtual desktops) to use the video wallpaper plugin
                     for line in lines:
                         # Check if we're entering a [Containments][X] section
                         if line.startswith("[Containments]["):
@@ -3074,6 +3028,7 @@ class WallpaperPicker(Gtk.Application):
         except Exception:
             pass
 
+    # Try to open wallpaper engine via steam URI handler
     def on_open_wallpaper_engine(self, button):
         try:
             # Try to open Wallpaper Engine via Steam URI handler
@@ -3095,7 +3050,8 @@ class WallpaperPicker(Gtk.Application):
                 self.lbl_status.set_text("Failed to open Wallpaper Engine (no handler found).")
             except Exception:
                 pass
-
+    
+    # Help Button Pop Up Window
     def on_help_clicked(self, button):
         try:
             win = Gtk.Window(transient_for=getattr(self, "main_window", None))
@@ -3393,7 +3349,6 @@ class WallpaperPicker(Gtk.Application):
                         def make_delete_button(path_val, target_row):
                             def _on_delete_clicked(btn):
                                 try:
-                                    # remove from UI
                                     try:
                                         if target_row.get_parent():
                                             parent = target_row.get_parent()
@@ -3407,7 +3362,6 @@ class WallpaperPicker(Gtk.Application):
                                                     pass
                                     except Exception:
                                         pass
-                                    # remove from state
                                     try:
                                         _remove_path_from_state(path_val)
                                     except Exception:

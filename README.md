@@ -17,3 +17,5 @@ chmod +x we-video-picker.py
 TODO:
 - Fix bug where on startup, if you click "open in explorer", it takes you one folder above the target folder.
 - add feature where if user has different plugin selected for wallpaper in KDE, then it will set it to the correct one and load
+- check for wallpaper engine installed on startup so they know why images aren't loading
+- error boxes instead of text. and make it red
