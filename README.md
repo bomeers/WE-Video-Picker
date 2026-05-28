@@ -1,5 +1,11 @@
 # WE Video Picker
-### Open Source Middleman software to connect wallpaper engine and KDE plugin "Smart Video Wallpaper Reborn"
+### Software to connect wallpaper engine and KDE plugin "Smart Video Wallpaper Reborn"
+
+## Screenshots
+### Main Page
+![alt text](screenshots/Screenshot_20260528_123056.png)
+### Settings
+![alt text](screenshots/Screenshot_20260528_123456.png)
 
 ## Quickstart
 Run the following in a terminal
@@ -13,12 +19,6 @@ chmod +x we-video-picker.py
 ```
 ./we-video-picker.py
 ```
-
-## Screenshots
-### Main Page
-![alt text](screenshots/Screenshot_20260528_123056.png)
-### Settings
-![alt text](screenshots/Screenshot_20260528_123456.png)
 
 TODO:
 - Fix bug where on startup, if you click "open in explorer", it takes you one folder above the target folder.
